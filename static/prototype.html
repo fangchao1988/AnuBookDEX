@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnuBook DEX - AI 隐私订单簿交易平台</title>
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --border: #30363d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --green: #3fb950;
+    --red: #f85149;
+    --blue: #58a6ff;
+    --purple: #a371f7;
+    --orange: #d2991d;
+    --cyan: #39d2b5;
+    --ai-accent: #a371f7;
+    --ai-glow: rgba(163,113,247,0.15);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg-primary); color: var(--text-primary);
+    height: 100vh; overflow: hidden; font-size: 13px;
+  }
+  a { color: var(--blue); text-decoration: none; }
+
+  /* === SIDEBAR NAV === */
+  #nav {
+    position: fixed; left: 0; top: 0; width: 96px; height: 100vh;
+    background: var(--bg-secondary); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; align-items: center; padding-top: 10px; z-index: 300;
+  }
+  #nav .nav-logo { font-size: 24px; font-weight: 700; color: var(--purple); margin-bottom: 8px; cursor: pointer; }
+  #nav .nav-item {
+    width: 80px; height: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 20px; color: var(--text-muted); border-radius: 8px; cursor: pointer;
+    margin: 1px 0; position: relative; transition: all 0.15s; gap: 1px;
+  }
+  #nav .nav-item .nav-text { font-size: 11px; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+  #nav .nav-item:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+  #nav .nav-item:hover .nav-text { color: var(--text-secondary); }
+  #nav .nav-item.active { color: var(--blue); background: rgba(88,166,255,0.1); }
+  #nav .nav-item.active .nav-text { color: var(--blue); }
+  #nav .nav-item .dot { position: absolute; top: 4px; right: 6px; width: 6px; height: 6px; background: var(--red); border-radius: 50%; }
+  #nav .nav-spacer { flex: 1; }
+  #nav .nav-badge {
+    width: 36px; height: 36px; border-radius: 50%; background: var(--purple);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #fff; margin-bottom: 8px; cursor: pointer;
+  }
+
+  /* === TOP HEADER === */
+  #topbar {
+    position: fixed; left: 96px; right: 0; top: 0; height: 48px;
+    background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 16px; gap: 16px; z-index: 100;
+  }
+  #topbar .pair-selector {
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    color: var(--text-primary); padding: 4px 12px; border-radius: 4px;
+    font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #topbar .price-ticker { display: flex; gap: 20px; font-size: 13px; }
+  #topbar .price-ticker .price { font-size: 16px; font-weight: 700; color: var(--green); }
+  #topbar .price-ticker .change { color: var(--green); }
+  #topbar .spacer { flex: 1; }
+  #topbar .badge {
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  #topbar .badge-ai { background: var(--ai-glow); color: var(--ai-accent); border: 1px solid var(--ai-accent); }
+  #topbar .badge-privacy { background: rgba(57,210,181,0.12); color: var(--cyan); border: 1px solid var(--cyan); }
+  #topbar .badge-mode { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
+  #topbar .badge-notify { background: rgba(210,153,29,0.12); color: var(--orange); border: 1px solid var(--orange); }
+  #topbar .btn-wallet {
+    background: var(--blue); color: #fff; border: none; padding: 6px 16px;
+    border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px;
+  }
+  #topbar .btn-wallet:hover { opacity: 0.9; }
+
+  /* === MAIN AREA === */
+  #main-area {
+    position: fixed; left: 96px; right: 0; top: 48px; bottom: 0;
+    overflow: hidden;
+  }
+  .view { display: none; height: 100%; }
+  .view.active { display: grid; }
+
+  /* === TRADING VIEW === */
+  #trading-view {
+    grid-template-columns: 280px 1fr 320px;
+    grid-template-rows: 1fr 200px;
+    gap: 1px; background: var(--border);
+  }
+  .panel { background: var(--bg-secondary); overflow-y: auto; }
+  .panel-header {
+    padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--text-secondary);
+    text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel-header .icon-ai { color: var(--ai-accent); }
+
+  /* Order Book */
+  #orderbook { grid-row: 1 / 3; display: flex; flex-direction: column; }
+  #orderbook .depth-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  #orderbook .depth-tabs button {
+    flex: 1; background: none; border: none; color: var(--text-secondary);
+    padding: 6px; cursor: pointer; font-size: 11px;
+  }
+  #orderbook .depth-tabs button.active { color: var(--text-primary); border-bottom: 2px solid var(--blue); }
+  .depth-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: "SF Mono","Fira Code",monospace; }
+  .depth-table td { padding: 1px 8px; }
+  .depth-table .ask td { color: var(--red); }
+  .depth-table .bid td { color: var(--green); }
+  .depth-bar-wrap { position: relative; }
+  .depth-bar { position: absolute; right: 0; top: 0; height: 100%; opacity: 0.12; }
+  .depth-bar.ask { background: var(--red); } .depth-bar.bid { background: var(--green); }
+  .depth-spread {
+    padding: 6px 12px; font-size: 13px; font-weight: 700; text-align: center;
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    color: var(--text-primary); background: var(--bg-tertiary);
+  }
+  .encrypt-label {
+    font-size: 10px; color: var(--cyan); border: 1px solid var(--cyan);
+    padding: 0 4px; border-radius: 2px; margin-left: 4px;
+  }
+
+  /* Chart Area */
+  #center-panel { grid-row: 1; display: flex; flex-direction: column; }
+  #chart-area { flex: 1; background: var(--bg-primary); position: relative; display: flex; align-items: center; justify-content: center; }
+  #chart-topbar { display: flex; align-items: center; padding: 6px 12px; gap: 4px; border-bottom: 1px solid var(--border); }
+  #chart-topbar .ch-btn { background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 12px; padding: 2px 8px; }
+  #chart-topbar .ch-btn.active { color: var(--text-primary); font-weight: 600; }
+  #chart-overlay { position: absolute; bottom: 12px; left: 12px; display: flex; gap: 8px; }
+  #chart-overlay .ch-btn {
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    color: var(--text-secondary); padding: 2px 10px; border-radius: 3px; cursor: pointer; font-size: 11px;
+  }
+  #chart-overlay .ch-btn.active { color: var(--text-primary); border-color: var(--blue); }
+
+  /* Order Form */
+  #order-form-wrap { border-top: 1px solid var(--border); padding: 10px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .order-form .of-header { display: flex; gap: 6px; margin-bottom: 8px; }
+  .order-form .of-type {
+    flex: 1; background: var(--bg-tertiary); border: 1px solid var(--border);
+    color: var(--text-secondary); padding: 4px 2px; border-radius: 3px;
+    cursor: pointer; font-size: 10px; text-align: center;
+  }
+  .order-form .of-type.active { color: var(--text-primary); border-color: var(--blue); }
+  .order-form .of-type.ai-type { color: var(--ai-accent); border-color: var(--ai-accent); }
+  .order-form label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 2px; }
+  .order-form input, .order-form select {
+    width: 100%; background: var(--bg-tertiary); border: 1px solid var(--border);
+    color: var(--text-primary); padding: 6px 8px; border-radius: 3px; font-size: 13px;
+    font-family: "SF Mono","Fira Code",monospace;
+  }
+  .order-form input:focus { border-color: var(--blue); outline: none; }
+  .order-form .slider-wrap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .order-form .slider-wrap input[type=range] { flex: 1; accent-color: var(--purple); }
+  .order-form .btn-order { width: 100%; padding: 8px; border: none; border-radius: 4px; font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 6px; }
+  .btn-buy { background: var(--green); color: #fff; } .btn-sell { background: var(--red); color: #fff; }
+  .btn-buy:hover, .btn-sell:hover { opacity: 0.85; }
+  .ai-hint { font-size: 10px; color: var(--ai-accent); margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+  .ai-hint::before { content: "AI"; background: var(--ai-accent); color: #fff; padding: 0 4px; border-radius: 2px; font-weight: 700; font-size: 9px; }
+
+  /* Right Sidebar */
+  #sidebar { grid-row: 1 / 3; display: flex; flex-direction: column; gap: 1px; background: var(--border); }
+  #sidebar .panel { flex: 0 0 auto; } #ai-panel { max-height: 260px; } #positions-panel { flex: 1; }
+  .ai-card { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .ai-card .ai-label { font-size: 10px; color: var(--ai-accent); font-weight: 700; margin-bottom: 4px; }
+  .ai-card .ai-row { display: flex; justify-content: space-between; font-size: 12px; margin: 2px 0; }
+  .ai-card .ai-rec { color: var(--green); font-weight: 600; }
+  .ai-card .ai-action {
+    background: var(--ai-glow); border: 1px solid var(--ai-accent); color: var(--ai-accent);
+    padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-top: 4px;
+  }
+  .ai-action:hover { background: rgba(163,113,247,0.25); }
+  .ai-signal { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .ai-signal.bullish { background: rgba(63,185,80,0.12); color: var(--green); }
+  .ai-signal.bearish { background: rgba(248,81,73,0.12); color: var(--red); }
+  .ai-signal.ranging { background: rgba(210,153,29,0.12); color: var(--orange); }
+
+  /* Positions */
+  .pos-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .pos-table th { color: var(--text-muted); font-weight: 400; padding: 4px 10px; text-align: right; font-size: 11px; }
+  .pos-table th:first-child, .pos-table td:first-child { text-align: left; }
+  .pos-table td { padding: 4px 10px; text-align: right; font-family: "SF Mono","Fira Code",monospace; }
+  .pos-table td:first-child { font-family: inherit; }
+  .pos-table tr:hover { background: var(--bg-tertiary); }
+  .leverage-select { display: flex; gap: 4px; flex-wrap: wrap; }
+  .leverage-select button {
+    background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary);
+    padding: 2px 8px; border-radius: 2px; cursor: pointer; font-size: 11px;
+  }
+  .leverage-select button.active { color: var(--orange); border-color: var(--orange); }
+
+  /* Bottom Bar */
+  #bottombar { grid-column: 2; }
+  #bottombar .tabs { display: flex; border-bottom: 1px solid var(--border); }
+  #bottombar .tabs button {
+    background: none; border: none; color: var(--text-secondary);
+    padding: 6px 16px; cursor: pointer; font-size: 12px;
+  }
+  #bottombar .tabs button.active { color: var(--text-primary); border-bottom: 2px solid var(--blue); }
+  .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .history-table th { color: var(--text-muted); font-weight: 400; padding: 3px 12px; text-align: right; font-size: 11px; }
+  .history-table th:first-child, .history-table td:first-child { text-align: left; }
+  .history-table td { padding: 3px 12px; text-align: right; font-family: "SF Mono","Fira Code",monospace; }
+  .history-table td:first-child { font-family: inherit; }
+  .history-table tr:hover { background: var(--bg-tertiary); }
+
+  /* === PAGE VIEW (Assets, LP, Strategy, Activity, Settings) === */
+  .page-view { padding: 20px; overflow-y: auto; }
+  .page-view h2 { font-size: 20px; margin-bottom: 20px; }
+  .page-view h3 { font-size: 15px; color: var(--text-secondary); margin: 24px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  .card-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .card {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .card .card-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
+  .card .card-value { font-size: 22px; font-weight: 700; }
+  .card .card-sub { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+  .table-wrap {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th { background: var(--bg-tertiary); color: var(--text-muted); font-weight: 400; padding: 8px 16px; text-align: left; font-size: 11px; }
+  .data-table td { padding: 8px 16px; border-top: 1px solid var(--border); }
+  .data-table tr:hover { background: var(--bg-tertiary); }
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
+  }
+  .tag-green { background: rgba(63,185,80,0.12); color: var(--green); }
+  .tag-red { background: rgba(248,81,73,0.12); color: var(--red); }
+  .tag-blue { background: rgba(88,166,255,0.12); color: var(--blue); }
+  .tag-purple { background: var(--ai-glow); color: var(--ai-accent); }
+  .tag-orange { background: rgba(210,153,29,0.12); color: var(--orange); }
+
+  /* Risk bar */
+  .risk-bar { height: 4px; background: var(--bg-tertiary); border-radius: 2px; margin-top: 4px; }
+  .risk-bar .fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+  .risk-bar .fill.safe { background: var(--green); }
+  .risk-bar .fill.warn { background: var(--orange); }
+  .risk-bar .fill.danger { background: var(--red); }
+
+  /* Progress bar */
+  .progress-bar { height: 8px; background: var(--bg-tertiary); border-radius: 4px; margin: 8px 0; }
+  .progress-bar .fill { height: 100%; border-radius: 4px; background: var(--blue); }
+
+  /* LP Pool Card */
+  .pool-card {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 20px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .pool-card .pool-info { }
+  .pool-card .pool-apr { font-size: 24px; font-weight: 700; color: var(--green); }
+  .pool-card .pool-btn {
+    background: var(--blue); color: #fff; border: none; padding: 10px 24px; border-radius: 6px;
+    font-weight: 600; cursor: pointer; font-size: 14px;
+  }
+  .pool-card .pool-btn:hover { opacity: 0.9; }
+
+  /* Activity list */
+  .activity-list { }
+  .activity-item {
+    padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start;
+  }
+  .activity-item .act-icon {
+    width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; flex-shrink: 0;
+  }
+  .activity-item .act-content { flex: 1; }
+  .activity-item .act-title { font-weight: 600; margin-bottom: 2px; }
+  .activity-item .act-desc { font-size: 12px; color: var(--text-muted); }
+  .activity-item .act-time { font-size: 11px; color: var(--text-muted); }
+
+  /* Modals */
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 400; }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 12px;
+    width: 520px; max-height: 80vh; overflow-y: auto;
+  }
+  .modal.wide { width: 680px; }
+  .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h3 { font-size: 16px; }
+  .modal-close { background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer; }
+  .modal-body { padding: 20px; }
+  .modal-body .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .modal-body .setting-row label { font-size: 13px; }
+  .toggle { position: relative; width: 44px; height: 24px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider { position: absolute; inset: 0; background: var(--bg-tertiary); border-radius: 24px; transition: 0.2s; border: 1px solid var(--border); }
+  .toggle .slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; background: #fff; border-radius: 50%; transition: 0.2s; }
+  .toggle input:checked + .slider { background: var(--purple); border-color: var(--purple); }
+  .toggle input:checked + .slider::before { transform: translateX(20px); }
+
+  /* Simple mode indicator */
+  body.simple-mode #chart-area { opacity: 0.6; pointer-events: none; }
+  body.simple-mode #ai-panel { opacity: 0.4; }
+  body.simple-mode .ai-hint { display: none; }
+  body.simple-mode .ai-card { opacity: 0.5; }
+  body.simple-mode .of-type.ai-type { display: none; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* AI Risk Monitor widget (inline on trading view) */
+  .risk-monitor {
+    padding: 6px 10px; font-size: 11px; background: var(--bg-tertiary);
+    display: flex; gap: 12px; align-items: center; border-bottom: 1px solid var(--border);
+  }
+  .risk-monitor .risk-item { display: flex; gap: 4px; align-items: center; }
+  .risk-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .risk-dot.safe { background: var(--green); } .risk-dot.warn { background: var(--orange); } .risk-dot.danger { background: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- ====== LEFT NAVIGATION ====== -->
+<div id="nav">
+  <div class="nav-logo" title="AnuBook DEX">A</div>
+  <div class="nav-item active" data-view="trading" title="交易">
+    📊<span class="nav-text">交易</span>
+  </div>
+  <div class="nav-item" data-view="assets" title="资产">
+    💰<span class="nav-text">资产</span>
+  </div>
+  <div class="nav-item" data-view="lp" title="流动性">
+    💧<span class="nav-text">流动性</span>
+  </div>
+  <div class="nav-item" data-view="strategy" title="AI策略">
+    🧠<span class="nav-text">AI策略</span>
+  </div>
+  <div class="nav-item" data-view="darkpool" title="暗池">
+    🔒<span class="nav-text">暗池</span>
+  </div>
+  <div class="nav-item" data-view="activity" title="活动中心">
+    🎯<div class="dot"></div><span class="nav-text">活动</span>
+  </div>
+  <div class="nav-spacer"></div>
+  <div class="nav-badge" title="设置" onclick="openModal('modal-settings')">⚙</div>
+</div>
+
+<!-- ====== TOP BAR ====== -->
+<div id="topbar">
+  <select class="pair-selector"><option>BTC/USDT</option><option>ETH/USDT</option><option>ANUBIS/USDT</option></select>
+  <div class="price-ticker">
+    <span class="price">68,245.30</span>
+    <span class="change">+1,234.50 (+1.84%)</span>
+    <span style="color:var(--text-muted)">24H: 72,341 BTC</span>
+  </div>
+  <div class="spacer"></div>
+  <span class="badge badge-notify" id="btn-notify" onclick="openModal('modal-announce')">📢 3 条公告</span>
+  <span class="badge badge-mode" id="btn-mode">专业模式</span>
+  <span class="badge badge-privacy" id="btn-privacy">隐私: 开启</span>
+  <span class="badge badge-ai" onclick="switchView('strategy')">AI 已就绪</span>
+  <button class="btn-wallet" onclick="switchView('assets')">0x7a3b...c9f1 ▾</button>
+</div>
+
+<!-- ====== MAIN CONTENT AREA ====== -->
+<div id="main-area">
+
+  <!-- ========== TRADING VIEW ========== -->
+  <div class="view active" id="trading-view">
+    <!-- LEFT: Order Book -->
+    <div class="panel" id="orderbook">
+      <div class="depth-tabs">
+        <button class="active">合并深度</button>
+        <button>默认深度</button>
+      </div>
+      <div class="panel-header">买盘 Bids <span class="encrypt-label">ZK加密</span></div>
+      <table class="depth-table" id="bids-table"></table>
+      <div class="depth-spread">
+        <span>68,245.30</span>
+        <span style="color:var(--text-muted);font-weight:400;margin-left:4px;">≈ $68,245.30</span>
+      </div>
+      <div class="panel-header" style="margin-top:0;">卖盘 Asks <span class="encrypt-label">ZK加密</span></div>
+      <table class="depth-table" id="asks-table"></table>
+      <div style="padding:6px 12px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);">
+        盘口数据加密脱敏 · 大额委托隐藏 · <span style="color:var(--ai-accent);">AI拆分标签</span>
+      </div>
+    </div>
+
+    <!-- CENTER -->
+    <div id="center-panel">
+      <div class="risk-monitor">
+        <span style="color:var(--text-muted);">AI 风控:</span>
+        <div class="risk-item"><div class="risk-dot safe"></div> 账户: 安全</div>
+        <div class="risk-item"><div class="risk-dot safe"></div> BTC多头: 安全</div>
+        <div class="risk-item"><div class="risk-dot warn"></div> BTC多头2: 警示 (82%风险线)</div>
+        <span style="flex:1;"></span>
+        <span style="color:var(--ai-accent);cursor:pointer;" onclick="switchView('strategy')">查看详情 →</span>
+      </div>
+      <div id="chart-topbar">
+        <button class="ch-btn active">1m</button><button class="ch-btn">5m</button><button class="ch-btn">15m</button>
+        <button class="ch-btn">1H</button><button class="ch-btn">4H</button><button class="ch-btn">1D</button><button class="ch-btn">1W</button>
+        <span style="flex:1;"></span>
+        <button class="ch-btn active">K线</button><button class="ch-btn">深度图</button>
+        <span style="color:var(--ai-accent);font-size:11px;margin-left:8px;">AI 点位已标注</span>
+      </div>
+      <div id="chart-area">
+        <svg width="600" height="280" viewBox="0 0 600 280" style="opacity:0.6;">
+          <defs><linearGradient id="grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3fb950" stop-opacity="0.15"/><stop offset="100%" stop-color="#3fb950" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0,230 L50,220 L100,200 L150,170 L200,140 L250,110 L300,95 L350,80 L400,100 L450,85 L500,60 L550,40 L600,30" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+          <path d="M0,230 L50,220 L100,200 L150,170 L200,140 L250,110 L300,95 L350,80 L400,100 L450,85 L500,60 L550,40 L600,30 L600,280 L0,280 Z" fill="url(#grad)"/>
+          <circle cx="500" cy="60" r="5" fill="#a371f7"/><text x="510" y="64" fill="#a371f7" font-size="11">AI 买入 @ 68,150</text>
+          <circle cx="360" cy="80" r="4" fill="#f85149"/><text x="370" y="84" fill="#f85149" font-size="11">止盈</text>
+          <line x1="0" y1="140" x2="600" y2="140" stroke="rgba(163,113,247,0.3)" stroke-dasharray="4,4"/>
+          <text x="4" y="136" fill="#a371f7" font-size="10">AI 支撑: 67,800</text>
+        </svg>
+        <div id="chart-overlay">
+          <button class="ch-btn active">MA5</button><button class="ch-btn active">MA10</button>
+          <button class="ch-btn">MA30</button><button class="ch-btn">布林带</button>
+          <button class="ch-btn" style="color:var(--ai-accent);border-color:var(--ai-accent);">AI 信号</button>
+        </div>
+      </div>
+      <div id="order-form-wrap">
+        <div class="order-form">
+          <div class="of-header">
+            <button class="of-type active" style="color:var(--green);">限价单</button>
+            <button class="of-type">市价单</button>
+            <button class="of-type">止损单</button>
+            <button class="of-type">条件单</button>
+            <button class="of-type ai-type">AI 冰山</button>
+          </div>
+          <label>价格 (USDT)</label><input type="text" value="68,150.00">
+          <label>数量 (BTC)</label><input type="text" value="0.0000">
+          <div class="slider-wrap"><span style="font-size:11px;color:var(--text-muted);">0%</span><input type="range" value="0"><span style="font-size:11px;color:var(--text-muted);">100%</span></div>
+          <label>可用: 128,456.78 USDT</label>
+          <div class="ai-hint">推买: 68,150 · 止损: 67,800 · 止盈: 69,200</div>
+          <button class="btn-order btn-buy">买入 BTC</button>
+        </div>
+        <div class="order-form">
+          <div class="of-header">
+            <button class="of-type active" style="color:var(--red);">限价单</button>
+            <button class="of-type">市价单</button>
+            <button class="of-type">止损单</button>
+            <button class="of-type">条件单</button>
+            <button class="of-type ai-type">AI 冰山</button>
+          </div>
+          <label>价格 (USDT)</label><input type="text" value="68,350.00">
+          <label>数量 (BTC)</label><input type="text" value="0.0000">
+          <div class="slider-wrap"><span style="font-size:11px;color:var(--text-muted);">0%</span><input type="range" value="0"><span style="font-size:11px;color:var(--text-muted);">100%</span></div>
+          <label>可用: 0.5234 BTC</label>
+          <div class="ai-hint">推卖: 68,350 · 止损: 68,700</div>
+          <button class="btn-order btn-sell">卖出 BTC</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDEBAR -->
+    <div id="sidebar">
+      <div class="panel" id="ai-panel">
+        <div class="panel-header"><span class="icon-ai">AI</span> 智能策略引擎</div>
+        <div class="ai-card">
+          <div class="ai-label">行情研判</div>
+          <div style="margin:4px 0;"><span class="ai-signal bullish">看涨</span> 置信度 78%</div>
+          <div class="ai-row"><span>趋势</span><span style="color:var(--green);">上升通道</span></div>
+          <div class="ai-row"><span>支撑/阻力</span><span>67,800 / 69,000</span></div>
+        </div>
+        <div class="ai-card">
+          <div class="ai-label">AI 点位推荐</div>
+          <div class="ai-row"><span>买入价</span><span class="ai-rec">68,150</span></div>
+          <div class="ai-row"><span>卖出价</span><span class="ai-rec" style="color:var(--red);">68,350</span></div>
+          <div class="ai-row"><span>止盈/止损</span><span>69,200 / 67,800</span></div>
+          <button class="ai-action">一键填入下单</button>
+        </div>
+        <div class="ai-card">
+          <div class="ai-label">AI 冰山拆分</div>
+          <div style="font-size:11px;color:var(--text-secondary);">分8笔 · 延迟2-5s · 滑点&lt;0.03%</div>
+          <button class="ai-action">启用智能拆单</button>
+        </div>
+      </div>
+      <div class="panel" id="positions-panel">
+        <div class="panel-header">持仓 & 杠杆仓位</div>
+        <div style="padding:6px 10px;font-size:12px;display:flex;justify-content:space-between;align-items:center;">
+          <span>总权益: <b style="color:var(--green);">152,634.52 USDT</b></span>
+          <div class="leverage-select">
+            <button>1x</button><button>2x</button><button class="active">3x</button>
+            <button>5x</button><button>10x</button>
+          </div>
+        </div>
+        <table class="pos-table">
+          <thead><tr><th>交易对</th><th>方向</th><th>数量</th><th>开仓价</th><th>标记价</th><th>盈亏</th><th>风险</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>BTC/USDT</td><td style="color:var(--green);">多头</td><td>0.52</td><td>67,200</td><td>68,245</td>
+              <td style="color:var(--green);">+543.40</td>
+              <td><div class="risk-bar" style="width:50px;"><div class="fill safe" style="width:25%;"></div></div><span style="font-size:10px;">安全</span></td>
+            </tr>
+            <tr>
+              <td>ETH/USDT</td><td style="color:var(--red);">空头</td><td>3.20</td><td>3,520</td><td>3,480</td>
+              <td style="color:var(--green);">+128.00</td>
+              <td><div class="risk-bar" style="width:50px;"><div class="fill safe" style="width:18%;"></div></div><span style="font-size:10px;">安全</span></td>
+            </tr>
+            <tr style="background:rgba(210,153,29,0.04);">
+              <td>BTC/USDT</td><td style="color:var(--green);">多头</td><td>1.00</td><td>68,800</td><td>68,245</td>
+              <td style="color:var(--red);">-555.00</td>
+              <td><div class="risk-bar" style="width:50px;"><div class="fill warn" style="width:62%;"></div></div><span style="font-size:10px;color:var(--orange);">警示</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="padding:6px 10px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);">
+          保证金加密 · 利息按持仓时长计费 · <span style="color:var(--red);">强平线: 80%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM -->
+    <div class="panel" id="bottombar">
+      <div class="tabs">
+        <button class="active">未成交订单 (2)</button>
+        <button>成交历史 (47)</button>
+        <button style="color:var(--ai-accent);">AI 运行日志</button>
+        <button>资产流水</button>
+      </div>
+      <table class="history-table" id="bottom-table">
+        <thead><tr><th>时间</th><th>交易对</th><th>方向</th><th>类型</th><th>价格</th><th>数量</th><th>已成交</th><th>状态</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td style="color:var(--text-muted);">14:32:15</td><td>BTC/USDT</td><td style="color:var(--green);">买入</td><td>限价单</td><td>68,150.00</td><td>0.0500</td><td>0.0000</td>
+            <td><span class="tag tag-orange">等待中</span></td><td><a href="#">撤销</a></td>
+          </tr>
+          <tr>
+            <td style="color:var(--text-muted);">14:28:03</td><td>ETH/USDT</td><td style="color:var(--red);">卖出</td><td>止损单</td><td>3,450.00</td><td>1.5000</td><td>1.5000</td>
+            <td><span class="tag tag-green">已完成</span></td><td><a href="#">详情</a></td>
+          </tr>
+          <tr>
+            <td style="color:var(--text-muted);">14:15:22</td><td>BTC/USDT</td><td style="color:var(--green);">买入</td><td><span class="tag tag-purple">AI 冰山</span></td><td>67,890.00</td><td>0.2000</td><td>0.2000</td>
+            <td><span class="tag tag-green">已完成</span></td><td><a href="#">详情</a></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="padding:6px 12px;font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);display:flex;gap:12px;">
+        <span>订单哈希可链上溯源</span>·<span>原始订单信息ZK加密</span>·<a href="#" onclick="document.querySelectorAll('#bottombar .tabs button')[0].click();">批量撤销未成交订单</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== ASSETS VIEW ========== -->
+  <div class="view page-view" id="assets-view">
+    <h2>资产总览</h2>
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-title">总资产估值</div>
+        <div class="card-value" style="color:var(--green);">$ 152,634.52</div>
+        <div class="card-sub">≈ 2.24 BTC</div>
+      </div>
+      <div class="card">
+        <div class="card-title">现货余额</div>
+        <div class="card-value">$ 98,234.16</div>
+        <div class="card-sub">可用: 86,450.00 USDT + 0.1734 BTC</div>
+      </div>
+      <div class="card">
+        <div class="card-title">杠杆持仓</div>
+        <div class="card-value" style="color:var(--orange);">$ 45,400.36</div>
+        <div class="card-sub">3x 杠杆 · 保证金: 15,133.45 USDT</div>
+      </div>
+      <div class="card">
+        <div class="card-title">流动性资产</div>
+        <div class="card-value" style="color:var(--blue);">$ 9,000.00</div>
+        <div class="card-sub">BTC/USDT LP · 累计收益 +$320.50</div>
+      </div>
+      <div class="card">
+        <div class="card-title">累计盈亏 (7天)</div>
+        <div class="card-value" style="color:var(--green);">+$ 3,456.78</div>
+        <div class="card-sub">+2.32% · 胜率 62%</div>
+      </div>
+      <div class="card" style="border:1px solid rgba(163,113,247,0.3);background:rgba(163,113,247,0.03);">
+        <div class="card-title"><span style="color:var(--purple);">NFT</span> 权益</div>
+        <div class="card-value" style="color:var(--purple);font-size:16px;">ANUBIS OG NFT</div>
+        <div class="card-sub">手续费-20% · AI折扣 · 杠杆利率优惠</div>
+      </div>
+    </div>
+
+    <h3>现货资产明细</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>币种</th><th>总量</th><th>可用</th><th>冻结中</th><th>折合 USDT</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr><td>USDT</td><td>86,450.00</td><td>86,450.00</td><td>0.00</td><td>$86,450.00</td><td><a href="#">充提</a></td></tr>
+          <tr><td>BTC</td><td>0.5234</td><td>0.1734</td><td>0.3500</td><td>$35,698.16</td><td><a href="#">充提</a></td></tr>
+          <tr><td>ETH</td><td>8.2000</td><td>5.0000</td><td>3.2000</td><td>$28,536.00</td><td><a href="#">充提</a></td></tr>
+          <tr><td>ANUBIS</td><td>50,000</td><td>50,000</td><td>0</td><td>$1,950.00</td><td><a href="#">充提</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>交易账单</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>时间</th><th>类型</th><th>交易对</th><th>金额</th><th>手续费</th><th>利息</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>2026-05-28 14:15</td><td><span class="tag tag-green">买入</span></td><td>BTC/USDT</td><td>13,578.00 USDT</td><td>13.57 USDT <span style="font-size:10px;color:var(--purple);">(NFT-20%)</span></td><td>-</td><td><span class="tag tag-green">成功</span></td></tr>
+          <tr><td>2026-05-28 10:30</td><td><span class="tag tag-red">卖出</span></td><td>ETH/USDT</td><td>11,040.00 USDT</td><td>11.04 USDT</td><td>-</td><td><span class="tag tag-green">成功</span></td></tr>
+          <tr><td>2026-05-27 22:00</td><td><span class="tag tag-blue">杠杆利息</span></td><td>BTC/USDT</td><td>-2.34 USDT</td><td>-</td><td>2.34 USDT</td><td><span class="tag tag-green">成功</span></td></tr>
+          <tr><td>2026-05-27 18:45</td><td><span class="tag tag-purple">暗池</span></td><td>ETH/USDT</td><td>50,000 USDT</td><td>100.00 USDT</td><td>-</td><td><span class="tag tag-green">成功</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;font-size:12px;color:var(--text-muted);">
+      所有日志支持导出 · 本地加密保存 · <a href="#">导出CSV</a> · <a href="#">导出PDF</a>
+    </div>
+  </div>
+
+  <!-- ========== LP LIQUIDITY VIEW ========== -->
+  <div class="view page-view" id="lp-view">
+    <h2>流动性挖矿</h2>
+    <div class="card-grid">
+      <div class="card"><div class="card-title">LP 总价值</div><div class="card-value" style="color:var(--blue);">$ 9,000.00</div><div class="card-sub">BTC/USDT 池</div></div>
+      <div class="card"><div class="card-title">累计手续费分红</div><div class="card-value" style="color:var(--green);">+$ 320.50</div><div class="card-sub">APR 12.8%</div></div>
+      <div class="card"><div class="card-title">生态代币奖励</div><div class="card-value" style="color:var(--purple);">+1,280 ANUBIS</div><div class="card-sub">≈ $49.92</div></div>
+    </div>
+
+    <h3>流动性池</h3>
+    <div class="pool-card" style="margin-bottom:12px;">
+      <div class="pool-info">
+        <div style="font-size:16px;font-weight:700;">BTC / USDT</div>
+        <div style="font-size:12px;color:var(--text-muted);">TVL: $12,450,000 · 24h成交量: $3.2M</div>
+        <div style="margin-top:8px;">你的份额: <b>0.072%</b></div>
+        <div class="progress-bar"><div class="fill" style="width:72%;background:var(--blue);"></div></div>
+        <div style="font-size:11px;color:var(--text-muted);">
+          AI 建议做市配比: BTC 0.066 | USDT 4,500 · 预计优化收益率 +2.3%
+        </div>
+      </div>
+      <div>
+        <div class="pool-apr">12.8%</div>
+        <div style="font-size:11px;color:var(--text-muted);">年化收益率</div>
+        <button class="pool-btn" style="margin-top:8px;margin-right:4px;">添加流动性</button>
+        <button class="pool-btn" style="background:var(--red);">移除</button>
+      </div>
+    </div>
+    <div class="pool-card" style="opacity:0.6;">
+      <div class="pool-info">
+        <div style="font-size:16px;font-weight:700;">ETH / USDT</div>
+        <div style="font-size:12px;color:var(--text-muted);">TVL: $8,900,000 · 24h成交量: $1.8M</div>
+        <div style="margin-top:8px;">未加入</div>
+      </div>
+      <div>
+        <div class="pool-apr">9.5%</div>
+        <div style="font-size:11px;color:var(--text-muted);">年化收益率</div>
+        <button class="pool-btn">添加流动性</button>
+      </div>
+    </div>
+
+    <h3>RocketSwap 流动性互通</h3>
+    <div class="card" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;">AnuBook 订单簿 ↔ RocketSwap AMM</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">AI路由统一调度 · 全域资金利用率提升 18% · 双向流动性互通</div>
+        </div>
+        <span class="tag tag-green">已连接</span>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;font-size:11px;color:var(--text-muted);">
+        <span>路由状态: 活跃</span>·<span>最优路径延迟: 3.2ms</span>·<span>今日路由交易: 1,234笔</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== AI STRATEGY CENTER ========== -->
+  <div class="view page-view" id="strategy-view">
+    <h2>AI 智能策略引擎</h2>
+    <div class="card-grid">
+      <div class="card"><div class="card-title">行情研判</div><div style="margin:6px 0;"><span class="ai-signal bullish">看涨 BTC</span></div><div class="card-sub">置信度 78% · 更新于 14:30</div></div>
+      <div class="card"><div class="card-title">今日AI交易</div><div class="card-value">12 笔</div><div class="card-sub">冰山拆分 8 · 点位推荐 4</div></div>
+      <div class="card"><div class="card-title">AI风控动作</div><div class="card-value">2 次</div><div class="card-sub">预警 1 · 减仓提醒 1</div></div>
+      <div class="card"><div class="card-title">策略运行</div><div style="font-size:22px;font-weight:700;color:var(--cyan);">1 个活跃</div><div class="card-sub">离线隐私托管 · 策略不泄露</div></div>
+    </div>
+
+    <h3>AI 风控实时监控</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>交易对</th><th>方向</th><th>保证金率</th><th>强平价格</th><th>当前价格</th><th>风险等级</th><th>AI动作</th></tr></thead>
+        <tbody>
+          <tr><td>BTC/USDT</td><td style="color:var(--green);">多头 3x</td><td>33.3%</td><td>56,400</td><td>68,245</td><td><span class="tag tag-green">安全</span></td><td>—</td></tr>
+          <tr><td>ETH/USDT</td><td style="color:var(--red);">空头 3x</td><td>33.3%</td><td>4,200</td><td>3,480</td><td><span class="tag tag-green">安全</span></td><td>—</td></tr>
+          <tr style="background:rgba(210,153,29,0.04);">
+            <td>BTC/USDT</td><td style="color:var(--green);">多头 3x</td><td>18.2%</td><td>60,500</td><td>68,245</td>
+            <td><span class="tag tag-orange">警示 82%</span></td>
+            <td style="font-size:11px;color:var(--orange);">AI建议: 部分减仓</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px;padding:10px;background:rgba(248,81,73,0.06);border:1px solid rgba(248,81,73,0.2);border-radius:6px;font-size:12px;">
+      <b style="color:var(--red);">AI风控规则:</b> 80%风险线=弹窗提醒 · 90%高危线=AI自动减仓(可关闭) · 接近强平线=自动对冲/平仓
+    </div>
+
+    <h3>策略离线隐私托管</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr><th>策略名称</th><th>状态</th><th>类型</th><th>创建时间</th><th>最近运行</th><th>操作</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>BTC网格策略 v2</td><td><span class="tag tag-green">运行中</span></td><td>网格交易</td><td>2026-05-20</td><td>14:30:15</td>
+            <td><a href="#">暂停</a> · <a href="#">日志</a> · <a href="#">快照</a></td>
+          </tr>
+          <tr>
+            <td>ETH趋势跟踪</td><td><span class="tag tag-red">已停止</span></td><td>趋势策略</td><td>2026-05-15</td><td>05-27 18:00</td>
+            <td><a href="#">启动</a> · <a href="#">编辑</a> · <a href="#">删除</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:12px;">
+      <button class="pool-btn" style="background:var(--purple);">+ 新建策略</button>
+      <button class="pool-btn" style="background:var(--bg-tertiary);color:var(--text-primary);">上传策略脚本</button>
+      <button class="pool-btn" style="background:var(--bg-tertiary);color:var(--text-primary);">策略快照备份</button>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+      策略代码离线运行 · 不上链不落地明文 · 仅加密交易指令上链 · 权限隔离
+    </div>
+
+    <h3>AI 智能交易路由</h3>
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px;">路由状态面板</div>
+      <div class="ai-row" style="margin:4px 0;"><span>AnuBook 订单簿深度</span><span style="color:var(--green);">优 (买卖价差 0.02%)</span></div>
+      <div class="ai-row" style="margin:4px 0;"><span>RocketSwap AMM 深度</span><span>中等 (滑点 0.15%)</span></div>
+      <div class="ai-row" style="margin:4px 0;"><span>AI推荐路径</span><span class="ai-rec">AnuBook 订单簿 (节省 0.13%)</span></div>
+      <div class="ai-row" style="margin:4px 0;"><span>预计滑点</span><span style="color:var(--green);">&lt; 0.01%</span></div>
+    </div>
+  </div>
+
+  <!-- ========== DARK POOL VIEW ========== -->
+  <div class="view page-view" id="darkpool-view">
+    <h2>机构暗池撮合</h2>
+    <div style="display:flex;gap:12px;margin-bottom:20px;">
+      <div class="card" style="flex:1;"><div class="card-title">MPC 网络状态</div><div style="font-size:20px;font-weight:700;color:var(--cyan);">运行中</div><div class="card-sub">零滑点撮合保障</div></div>
+      <div class="card" style="flex:1;"><div class="card-title">今日暗池交易</div><div style="font-size:20px;font-weight:700;">8 笔</div><div class="card-sub">总金额: $1,245,000</div></div>
+      <div class="card" style="flex:1;"><div class="card-title">暗池服务费</div><div style="font-size:20px;font-weight:700;color:var(--orange);">$2,490</div><div class="card-sub">固定费 + 超额佣金</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="card">
+        <h3 style="margin-bottom:12px;">提交暗池订单</h3>
+        <label style="font-size:12px;color:var(--text-muted);">交易方向</label>
+        <div style="display:flex;gap:8px;margin:8px 0 12px;">
+          <button class="btn-order btn-buy" style="flex:1;padding:10px;">买入</button>
+          <button class="btn-order btn-sell" style="flex:1;background:var(--bg-tertiary);color:var(--red);padding:10px;">卖出</button>
+        </div>
+        <label>金额 (USDT) <span style="color:var(--orange);">≥ 10,000</span></label>
+        <input type="text" value="100,000" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-primary);padding:10px;border-radius:4px;font-size:16px;margin:4px 0 12px;">
+        <label>滑点容忍度</label>
+        <input type="text" value="0.01%" style="width:100%;background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-primary);padding:10px;border-radius:4px;margin:4px 0 12px;">
+        <div style="padding:10px;background:rgba(248,81,73,0.06);border-rad四角ius:4px;font-size:11px;color:var(--orange);margin:8px 0;">
+          大额交易强制二次确认 · MPC加密撮合 · 不对外展示订单
+        </div>
+        <button class="btn-order" style="width:100%;background:var(--purple);color:#fff;padding:14px;font-size:16px;">提交暗池订单 (MPC加密)</button>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:12px;">暗池交易记录 <span style="font-size:11px;color:var(--cyan);">加密归档</span></h3>
+        <table class="data-table" style="font-size:12px;">
+          <thead><tr><th>时间</th><th>方向</th><th>金额</th><th>滑点</th><th>费用</th></tr></thead>
+          <tbody>
+            <tr><td>14:00</td><td style="color:var(--green);">买入</td><td>$200,000</td><td>0.005%</td><td>$400</td></tr>
+            <tr><td>11:30</td><td style="color:var(--red);">卖出</td><td>$150,000</td><td>0.008%</td><td>$300</td></tr>
+            <tr><td>09:15</td><td style="color:var(--green);">买入</td><td>$500,000</td><td>0.003%</td><td>$1,000</td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px;font-size:11px;color:var(--text-muted);">
+          支持机构合规对账 · 加密审计接口 · ZK分级隐私
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h3 style="margin-bottom:8px;">ZK-KYC 分级合规状态</h3>
+      <div class="setting-row">
+        <div><b>小额交易</b> (&lt; 10,000 USDT)<br><span style="font-size:11px;color:var(--text-muted);">完全匿名，无需KYC</span></div>
+        <span class="tag tag-green">活跃</span>
+      </div>
+      <div class="setting-row">
+        <div><b>大额交易</b> (≥ 10,000 USDT)<br><span style="font-size:11px;color:var(--text-muted);">触发ZK-KYC引导，自主选择披露范围</span></div>
+        <span class="tag tag-orange">待触发</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+        符合AML/GDPR · ANUBIS官方审计接口已预留 · 交易行为可追溯但不泄露策略与原始订单
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== ACTIVITY VIEW ========== -->
+  <div class="view page-view" id="activity-view">
+    <h2>活动中心 & 公告</h2>
+
+    <h3>系统公告</h3>
+    <div class="activity-list">
+      <div class="activity-item" style="background:var(--bg-secondary);border-radius:8px;margin-bottom:8px;">
+        <div class="act-icon" style="background:rgba(163,113,247,0.12);">📢</div>
+        <div class="act-content">
+          <div class="act-title">AnuBook V2.0 主网上线公告</div>
+          <div class="act-desc">全量AI智能策略引擎、机构暗池完整版、NFT权益体系正式上线。新增隐私衍生品交易预览。</div>
+          <div class="act-time">2026-05-28 12:00 · 版本更新</div>
+        </div>
+      </div>
+      <div class="activity-item" style="background:var(--bg-secondary);border-radius:8px;margin-bottom:8px;">
+        <div class="act-icon" style="background:rgba(248,81,73,0.12);">⚠</div>
+        <div class="act-content">
+          <div class="act-title">风控提示: ANUBIS 网络升级维护</div>
+          <div class="act-desc">6月1日 02:00-04:00 UTC进行网络升级，期间部分功能暂停。请提前调整杠杆仓位。</div>
+          <div class="act-time">2026-05-27 18:00 · 系统通知</div>
+        </div>
+      </div>
+      <div class="activity-item" style="background:var(--bg-secondary);border-radius:8px;">
+        <div class="act-icon" style="background:rgba(63,185,80,0.12);">🎉</div>
+        <div class="act-content">
+          <div class="act-title">交易挖矿: 双倍 ANUBIS 奖励周</div>
+          <div class="act-desc">本周交易量前100名用户共享 50,000 ANUBIS 奖池。暗池交易额外 +20% 奖励。</div>
+          <div class="act-time">2026-05-25 ~ 2026-06-01 · 活动</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>运营活动</h3>
+    <div class="card-grid">
+      <div class="card">
+        <div style="font-size:24px;margin-bottom:8px;">🎯</div>
+        <div style="font-weight:700;">新手引导计划</div>
+        <div style="font-size:12px;color:var(--text-muted);margin:4px 0;">AI功能 · 隐私设置 · 杠杆教程</div>
+        <button class="ai-action">开始学习</button>
+      </div>
+      <div class="card">
+        <div style="font-size:24px;margin-bottom:8px;">🏆</div>
+        <div style="font-weight:700;">AI体验活动</div>
+        <div style="font-size:12px;color:var(--text-muted);margin:4px 0;">使用AI策略引擎，赢取ANUBIS奖励</div>
+        <button class="ai-action">立即参与</button>
+      </div>
+      <div class="card">
+        <div style="font-size:24px;margin-bottom:8px;">🤝</div>
+        <div style="font-weight:700;">机构合作</div>
+        <div style="font-size:12px;color:var(--text-muted);margin:4px 0;">暗池免服务费30天 · 专属后台</div>
+        <button class="pool-btn" style="font-size:11px;padding:4px 12px;">申请白名单</button>
+      </div>
+      <div class="card">
+        <div style="font-size:24px;margin-bottom:8px;">💎</div>
+        <div style="font-weight:700;">LP 流动性激励</div>
+        <div style="font-size:12px;color:var(--text-muted);margin:4px 0;">添加流动性 · 双倍ANUBIS</div>
+        <button class="pool-btn" style="font-size:11px;padding:4px 12px;">添加LP</button>
+      </div>
+    </div>
+
+    <h3>通知设置</h3>
+    <div class="card">
+      <div class="setting-row"><label>版本更新通知</label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label>风控提示推送</label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label>活动优惠提醒</label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label>AI策略运行报告</label><label class="toggle"><input type="checkbox"><span class="slider"></span></label></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ====== MODALS ====== -->
+
+<!-- AI Strategy Modal -->
+<div class="modal-overlay" id="modal-ai">
+  <div class="modal">
+    <div class="modal-header"><h3>AI 智能策略引擎设置</h3><button class="modal-close" onclick="closeModal('modal-ai')">✕</button></div>
+    <div class="modal-body">
+      <div class="setting-row"><label><b>AI 行情研判</b><br><span style="font-size:11px;color:var(--text-muted);">实时分析盘口、资金流向、舆情</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>AI 点位推荐</b><br><span style="font-size:11px;color:var(--text-muted);">自动计算买卖/止盈止损位</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>AI 冰山拆单</b><br><span style="font-size:11px;color:var(--text-muted);">大额订单自动拆分，防MEV狙击</span></label><label class="toggle"><input type="checkbox"><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>AI 自动风控</b><br><span style="font-size:11px;color:var(--text-muted);">7x24监控杠杆仓位，自动减仓</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>AI 智能路由</b><br><span style="font-size:11px;color:var(--text-muted);">AnuBook + RocketSwap 最优路径</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>策略隐私托管</b><br><span style="font-size:11px;color:var(--text-muted);">策略离线运行，不上链不泄露</span></label><button class="ai-action" style="margin:0;">上传策略</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal">
+    <div class="modal-header"><h3>设置</h3><button class="modal-close" onclick="closeModal('modal-settings')">✕</button></div>
+    <div class="modal-body">
+      <div class="setting-row"><label><b>全局隐私模式</b><br><span style="font-size:11px;color:var(--text-muted);">隐藏地址、订单、持仓</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>简易模式</b><br><span style="font-size:11px;color:var(--text-muted);">切换到简化交易界面</span></label><label class="toggle" id="toggle-simple"><input type="checkbox"><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>多钱包管理</b><br><span style="font-size:11px;color:var(--text-muted);">连接多个ANUBIS生态钱包</span></label><button class="pool-btn" style="font-size:11px;padding:4px 12px;">添加钱包</button></div>
+      <div class="setting-row"><label><b>会话超时自动登出</b><br><span style="font-size:11px;color:var(--text-muted);">30分钟无操作自动断开</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div class="setting-row"><label><b>NFT权益识别</b><br><span style="font-size:11px;color:var(--text-muted);">自动识别ANUBIS生态NFT</span></label><label class="toggle"><input type="checkbox" checked><span class="slider"></span></label></div>
+      <div style="margin-top:12px;padding:10px;background:rgba(163,113,247,0.06);border-radius:4px;border:1px solid rgba(163,113,247,0.2);font-size:12px;">
+        当前: <b style="color:var(--purple);">ANUBIS OG NFT</b> · 手续费-20% · AI折扣 · 杠杆利率优惠
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Announcement Modal -->
+<div class="modal-overlay" id="modal-announce">
+  <div class="modal">
+    <div class="modal-header"><h3>公告详情</h3><button class="modal-close" onclick="closeModal('modal-announce')">✕</button></div>
+    <div class="modal-body">
+      <div class="activity-item"><div class="act-icon" style="background:rgba(163,113,247,0.12);">📢</div><div class="act-content"><div class="act-title">V2.0 主网上线</div><div class="act-desc">全量AI功能、暗池、NFT权益体系上线</div></div></div>
+      <div class="activity-item"><div class="act-icon" style="background:rgba(248,81,73,0.12);">⚠</div><div class="act-content"><div class="act-title">网络升级维护</div><div class="act-desc">6月1日 02:00-04:00 UTC</div></div></div>
+      <div class="activity-item"><div class="act-icon" style="background:rgba(63,185,80,0.12);">🎉</div><div class="act-content"><div class="act-title">双倍ANUBIS奖励周</div><div class="act-desc">共享 50,000 ANUBIS 奖池</div></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- View switching ---
+function switchView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(name + '-view').classList.add('active');
+  document.querySelectorAll('#nav .nav-item').forEach(n => n.classList.remove('active'));
+  const navItem = document.querySelector(`[data-view="${name}"]`);
+  if (navItem) navItem.classList.add('active');
+}
+document.querySelectorAll('#nav .nav-item').forEach(item => {
+  item.addEventListener('click', () => switchView(item.dataset.view));
+});
+
+// --- Modal ---
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+  ov.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('active'); });
+});
+
+// --- Depth data ---
+function genDepth(base, count, isAsk) {
+  const rows = [];
+  for (let i = 0; i < count; i++) {
+    const offset = isAsk ? (i * 5 + Math.random() * 10) : -(i * 5 + Math.random() * 10);
+    const price = (base + offset).toFixed(2);
+    const amt = (Math.random() * 3 + 0.1).toFixed(4);
+    const maxAmt = 3.5;
+    const pct = Math.min((parseFloat(amt) / maxAmt) * 100, 100).toFixed(0);
+    rows.push({ price, amt, total: (parseFloat(amt) * parseFloat(price)).toFixed(2), pct });
+  }
+  return rows;
+}
+function renderDepth(tableId, rows, dir) {
+  document.getElementById(tableId).innerHTML = rows.map(r =>
+    `<tr class="${dir}"><td class="depth-bar-wrap"><div class="depth-bar ${dir}" style="width:${r.pct}%"></div><span>${r.price}</span></td><td style="text-align:right;">${r.amt}</td><td style="text-align:right;color:var(--text-secondary);">${r.total}</td></tr>`
+  ).join('');
+}
+renderDepth('bids-table', genDepth(68245, 14, false), 'bid');
+renderDepth('asks-table', genDepth(68245, 14, true), 'ask');
+
+// --- Topbar badges ---
+document.getElementById('btn-privacy').addEventListener('click', function() {
+  if (this.textContent.includes('开启')) { this.textContent = '隐私: 关闭'; this.style.color = 'var(--red)'; }
+  else { this.textContent = '隐私: 开启'; this.style.color = 'var(--cyan)'; }
+});
+document.getElementById('btn-mode').addEventListener('click', function() {
+  this.textContent = this.textContent === '专业模式' ? '简易模式' : '专业模式';
+  document.body.classList.toggle('simple-mode');
+});
+document.querySelector('.badge-ai').addEventListener('click', () => openModal('modal-ai'));
+
+// --- Order type tabs ---
+document.querySelectorAll('.of-type').forEach(btn => {
+  btn.addEventListener('click', function() {
+    this.closest('.of-header').querySelectorAll('.of-type').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// --- AI action buttons ---
+document.querySelectorAll('.ai-action').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const orig = this.textContent;
+    this.textContent = '已应用 ✓'; this.style.color = 'var(--green)'; this.style.borderColor = 'var(--green)';
+    setTimeout(() => { this.textContent = orig; this.style.color = ''; this.style.borderColor = ''; }, 1500);
+  });
+});
+
+// --- Chart / Bottom tab handlers ---
+document.querySelectorAll('#chart-topbar .ch-btn, #chart-overlay .ch-btn, #orderbook .depth-tabs button, #bottombar .tabs button').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const group = this.parentElement;
+    group.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// --- Leverage buttons ---
+document.querySelectorAll('.leverage-select button').forEach(btn => {
+  btn.addEventListener('click', function() {
+    this.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+  });
+});
+
+// --- Close modals on Escape ---
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+});
+</script>
+</body>
+</html>

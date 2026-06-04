@@ -1,0 +1,52 @@
+# Binaries
+*.bin
+engine
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Configuration files (may contain secrets)
+conf/config.yaml
+conf/dev.yaml
+conf/match-engine.conf.yaml
+conf/bak.yaml
+conf/preconf
+
+# Example config (keep)
+!conf/config.example.yaml
+
+# Logs
+logs/
+*.log
+
+# Snapshots
+sp/*.gob
+sp/*-snapshot-go
+
+# Data directories
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+vendor/
+
+# Docker
+Dockerfile
+.dockerignore

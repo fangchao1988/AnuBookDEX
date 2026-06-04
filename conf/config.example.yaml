@@ -1,0 +1,158 @@
+# AnuBookDEX Configuration Template
+# Copy this file to config.yaml and fill in your values.
+# WARNING: config.yaml is gitignored — never commit real credentials.
+
+app:
+  profile: "market"          # ENV: APP_PROFILE
+  name: "market"             # ENV: APP_NAME
+  seq: 0                     # ENV: CAPTAIN_SEQ
+
+rabbitmq:
+  protocol: "amqps"
+  address:
+    - "your-rabbitmq-host:5671"
+  virtual-host: "/"
+  username: "${RABBITMQ_USER}"     # ENV: RABBITMQ_USER
+  password: "${RABBITMQ_PASSWORD}" # ENV: RABBITMQ_PASSWORD
+  conn-num: 10
+  conn-timeout-ms: 3000
+  n-retry: 30
+  ts-bumper-interval-ms: 3000
+  exchange:
+    market: "exchange.market-match.ts-bumper"
+    trade-detail: "exchange.market-match.match-result"
+    quotation: "l2quote"
+  max-delay-s: 60
+  compressed: false
+
+batch_result: 90
+
+snapshot:
+  dir: "./sp/"
+  ends-with: "-snapshot-go"
+  n-history: 10
+  min-gap: 100000
+
+scheduler:
+  snapshot: [0, 60000]
+  orderbook-report: [0, 1500000]
+
+redis:
+  address:
+    - "your-redis-cluster:6379"
+  password: "${REDIS_PASSWORD}"   # ENV: REDIS_PASSWORD
+  db: "0"
+
+log:
+  debug: false
+  json-encode: false
+  info-path: "./logs/info.log"
+  error-path: "./logs/warn.log"
+  max-age: 168
+  rotation: 1
+  level: info                     # trace | debug | info | warn
+
+exchange:
+  l2quote:
+    size: 1800
+  trade:
+    size: 5000
+  depth:
+    size: 1000
+
+mrredis:
+  check-result: true
+
+symbols:
+  - ETH_USDT
+  - BTC_USDT
+
+market:
+  freq-depth-update-interval-ms: 30
+  min-depth-update-interval-ms: 100
+  min-stacked-depth-update-interval-ms: 1000
+  default-update-interval-ms: 1000
+
+symbol-info:
+  default:
+    amount-scale: 18
+    price-scale: 18
+    l2quote-price-scale: 2
+    depth-10percent-capacity: 200
+    depth-steps:
+      "0": [0.000000000000000001, 150]
+      "1": [0.00001, 150]
+      "2": [0.0001, 150]
+      "3": [0.001, 150]
+      "4": [0.01, 150]
+      "5": [0.1, 150]
+      "6": [0.000000000000000001, 20]
+      "7": [0.00001, 20]
+      "8": [0.0001, 20]
+      "9": [0.001, 20]
+      "10": [0.01, 20]
+      "11": [0.1, 20]
+    uncombined-depth-steps:
+      "150.high_freq": [0.000000000000000001, 150]
+      "20.high_freq":  [0.000000000000000001,  20]
+
+aibit-db:
+  endpoint: "${AIBIT_DB_HOST}"
+  user: "${AIBIT_DB_USER}"
+  password: "${AIBIT_DB_PASSWORD}"
+  db: "aibit"
+  conn-num: 20
+  pull-gap: 50
+
+mysql:
+  endpoint: "${MYSQL_HOST}"             # ENV: MYSQL_HOST
+  user: "${MYSQL_USER}"                 # ENV: MYSQL_USER
+  password: "${MYSQL_PASSWORD}"         # ENV: MYSQL_PASSWORD
+  db: "aibit_spot_order"
+  conn-num: 20
+  pull-gap: 50
+
+persistence:
+  endpoint: "${PERSISTENCE_HOST}"       # ENV: PERSISTENCE_HOST
+  user: "${PERSISTENCE_USER}"           # ENV: PERSISTENCE_USER
+  password: "${PERSISTENCE_PASSWORD}"   # ENV: PERSISTENCE_PASSWORD
+  db: "aibit_spot_order"
+  conn-num: 32
+  batch-size: 30
+
+aws:
+  credential:
+    access-key: "${AWS_ACCESS_KEY}"     # ENV: AWS_ACCESS_KEY_ID
+    secret-key: "${AWS_SECRET_KEY}"     # ENV: AWS_SECRET_ACCESS_KEY
+  s3:
+    enable: false
+    bucket: "your-bucket"
+    region: "your-region"
+    upload-timeout-second: 120
+
+l2quote:
+  mq-send-interval-ms: 500
+  kline-forward-limit: 1440
+  make-new-kline-at-sec: 2
+  snapshot:
+    n-history: 10
+    path: "./sp/"
+
+location: "Asia/Shanghai"
+
+# DEX 模式独有配置（cmd/engine/main.go）
+chain:
+  rpc-endpoint: "${ANUBIS_RPC_ENDPOINT}"
+  rpc-ws-endpoint: "${ANUBIS_RPC_WS_ENDPOINT}"
+  settlement-contract: ""
+  private-key: ""                           # 生产环境禁止硬编码
+  settlement-batch-size: 100
+  settlement-interval-ms: 500
+  settlement-workers: 3
+  poll-interval-ms: 200
+
+rocksdb:
+  data-dir: "./data/"
+
+http:
+  port: 9000

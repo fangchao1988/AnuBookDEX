@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anubookdex-engine:latest
+    container_name: anubookdex-engine
+    ports:
+      - "9000:9000"
+    environment:
+      - CONFIG_FILE=/app/conf/config.yaml
+      - START_OK=/app/.start_ok
+    volumes:
+      - ./conf:/app/conf:ro
+      - engine_data:/app/data
+      - engine_logs:/app/logs
+      - engine_sp:/app/sp
+    restart: unless-stopped
+    networks:
+      - anubookdex
+
+volumes:
+  engine_data:
+  engine_logs:
+  engine_sp:
+
+networks:
+  anubookdex:
+    driver: bridge
