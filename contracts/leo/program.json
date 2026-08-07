@@ -1,0 +1,9 @@
+{
+  "program": "anubook_dex_p2.aleo",
+  "version": "0.1.0",
+  "description": "AnuBookDEX Aleo program - Phase 2 record privacy model",
+  "license": "MIT",
+  "leo": "4.4.0",
+  "dependencies": null,
+  "dev_dependencies": null
+}

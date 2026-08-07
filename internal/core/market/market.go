@@ -43,6 +43,14 @@ func MarketThreadInit(exchange, symbol string) {
 }
 
 // MarketThreadInitWS 初始化行情线程（WebSocket 模式，替代 RabbitMQ）
+// GetDepthChannel 返回指定交易对的深度 channel（供 AI 研判等订阅盘口数据）。
+func GetDepthChannel(symbol string) <-chan *QuoteDepths {
+	if ch, ok := depthChan[symbol]; ok {
+		return ch
+	}
+	return nil
+}
+
 func MarketThreadInitWS(symbol string, broadcaster DepthBroadcaster) {
 	wsBroadcaster = broadcaster
 	ch := make(chan *QuoteDepths, config.GetInt64("exchange.depth.size", 1000))

@@ -1,6 +1,6 @@
 module github.com/AnuBookDEX/engine
 
-go 1.21
+go 1.23.4
 
 require (
 	github.com/DataDog/datadog-go v4.8.3+incompatible

@@ -34,7 +34,7 @@ docker compose up -d --build
 ./engine.bin                 # 默认读取 ./conf/config.yaml，HTTP :9000
 
 # 自定义配置
-CONFIG_FILE=./conf/config-dev.yaml ./engine.bin
+CONFIG_FILE=./conf/dev.yaml ./engine.bin
 ```
 
 ### WebSocket 行情订阅
@@ -85,7 +85,7 @@ MySQL 序列表 -> puller -> orderSeqChan -> matcher    -> mrChan        -> l2qu
                 ────────────┬─────────────
                             │ deploy
                             ▼
-Anubis Chain (Registry SC / Settlement SC / LeverageManager SC)
+Anubis Chain (Registry Smart Contract / Settlement Smart Contract / LeverageManager Smart Contract)
          │                                          ▲
          │ OrderSubmitted 事件                       │ submitBatch + ZKProof
          ▼                                          │

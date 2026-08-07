@@ -105,6 +105,7 @@ type L2quote struct {
 	marketDetail     *kline          // 24小时汇总
 	ticker           *Ticker         //ticker message
 	mqSendChan       chan *MqMessage // mq汇总发送队列
+	rawPublisher     RawPublisher    // DEX 模式可选的 WS 发布器（引擎注入，替代 RabbitMQ）
 	sendMRID         int64           // 行情发送点标记
 	sendMarketMRID   int64           // market detail发送点标记
 	lastSnapshotTime int             // 最后一次快照时间
@@ -119,6 +120,12 @@ func NewL2quote(symbol string, client *redis.Client, matchResultChan chan []byte
 		mqExchangeName: mqExchangeName, mqSendIntervalMS: mqSendIntervalMS,
 		klineForwardLimit: klineForwardLimit, mqBatchSize: mqBatchSize,
 		snapshotMaxHistoryNum: snapshotMaxHistoryNum, makeNewKlineAtSec: makeNewKlineAtSec, ctx: context.Background()}
+}
+
+// SetRawPublisher 注入 WS 发布器（DEX 模式）。注入后 sendToMQ 将 K线/成交/Ticker
+// 直接广播到 WS Hub 而非 RabbitMQ。
+func (L *L2quote) SetRawPublisher(p RawPublisher) {
+	L.rawPublisher = p
 }
 
 func (L *L2quote) Init() int64 {

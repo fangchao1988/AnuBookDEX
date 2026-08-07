@@ -1,0 +1,62 @@
+# 本地联调配置：Aleo 引擎（Phase 2b 链下订单通道 + record 结算）
+# 用法：CONFIG_FILE=./conf/dev-aleo.yaml ./engine-aleo
+# 行情由 POST /order 进单驱动（前端 OrderForm / web/scripts/sim-orders.mjs 灌单）
+app:
+  seq: 1
+
+log:
+  level: info   # 联调收敛日志（sendAllKlines DEBUG 全量 K 线 JSON 每小时 ~63MB）
+
+symbols:
+  - ETH_USDT
+  - BTC_USDT
+
+symbol-info:
+  default:
+    amount-scale: 18
+    price-scale: 18
+    l2quote-price-scale: 2
+    depth-10percent-capacity: 200
+    depth-steps:
+      "0": [0.000000000000000001, 150]
+      "1": [0.00001, 150]
+      "2": [0.0001, 150]
+      "3": [0.001, 150]
+      "4": [0.01, 150]
+      "5": [0.1, 150]
+      "6": [0.000000000000000001, 20]
+      "7": [0.00001, 20]
+      "8": [0.0001, 20]
+      "9": [0.001, 20]
+      "10": [0.01, 20]
+      "11": [0.1, 20]
+
+scheduler:
+  snapshot: [0, 60000]
+  orderbook-report: [0, 1500000]
+
+l2quote:
+  mq-send-interval-ms: 500
+  kline-forward-limit: 1440
+  snapshot:
+    path: "./sp-aleo-p3/"
+    n-history: 10
+  make-new-kline-at-sec: 2
+
+batch_result: 90
+
+rocksdb:
+  data-dir: "./data/aleo-snapshot-p3"
+
+http:
+  port: 9000
+
+chain:
+  aleo:
+    rpc-endpoint: "https://api.explorer.provable.com/v1"
+    program-id: "anubook_dex_p2.aleo"
+    private-key: ""                    # ENV: ALEO_PRIVATE_KEY（本地联调可空）
+    address: "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal"  # operator（与 conf/config.yaml 一致）
+    require-ciphertext: false          # 本地联调允许空 ciphertext（生产默认 true）
+    settlement-enabled: false          # 本地联调跳过链上 settle（占位密文无法解密）
+    settlement-batch-size: 100

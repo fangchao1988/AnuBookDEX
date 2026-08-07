@@ -176,6 +176,7 @@ func getTakerStateStr(state OrderState) string {
 type Order struct {
 	SeqId                int64
 	UserId               int64
+	Symbol               string `json:"symbol,omitempty"` // 交易对（ETH_USDT），链下订单通道路由用
 	UserAddress          string `json:"user-address,omitempty"` // Anubis EVM address (Phase 2)
 	OrderId              int64
 	BuyOrSell            OrderBuyOrSell

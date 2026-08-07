@@ -140,16 +140,29 @@ l2quote:
 
 location: "Asia/Shanghai"
 
-# DEX 模式独有配置（cmd/engine/main.go）
+# DEX 模式配置（cmd/engine/{anubis,aleo}/main.go）
+# 双链同步开发：Anubis（EVM/Solidity）与 Aleo（Leo/snarkVM）各自独立配置。
 chain:
-  rpc-endpoint: "${ANUBIS_RPC_ENDPOINT}"
-  rpc-ws-endpoint: "${ANUBIS_RPC_WS_ENDPOINT}"
-  settlement-contract: ""
-  private-key: ""                           # 生产环境禁止硬编码
-  settlement-batch-size: 100
-  settlement-interval-ms: 500
-  settlement-workers: 3
-  poll-interval-ms: 200
+  # ── Anubis 链后端（EVM，eth_getLogs 轮询 + Settlement SC）──
+  anubis:
+    rpc-endpoint: "${ANUBIS_RPC_ENDPOINT}"   # ENV: ANUBIS_RPC_ENDPOINT
+    rpc-ws-endpoint: "${ANUBIS_RPC_WS_ENDPOINT}"
+    chain-id: 6714
+    settlement-contract: ""
+    registry-contract: ""                     # OrderBookRegistry SC（订阅 OrderSubmitted 事件）
+    private-key: ""                           # ENV: ANUBIS_PRIVATE_KEY；生产环境禁止硬编码
+    view-key-private: ""
+    settlement-batch-size: 100
+    settlement-interval-ms: 500
+    settlement-workers: 3
+    poll-interval-ms: 200
+  # ── Aleo 链后端（Leo/snarkVM，snarkOS REST；骨架阶段）──
+  aleo:
+    rpc-endpoint: "https://api.explorer.provable.com/v1"   # Aleo testnet（Provable explorer API）
+    program-id: "anubook_dex.aleo"
+    private-key: ""                           # ENV: ALEO_PRIVATE_KEY
+    settlement-batch-size: 100
+    poll-interval-ms: 1000
 
 rocksdb:
   data-dir: "./data/"

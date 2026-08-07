@@ -2,6 +2,7 @@ package l2quote
 
 import (
 	"fmt"
+	"strings"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/AnuBookDEX/engine/internal/infra/common"
@@ -22,6 +23,34 @@ type MqMessage struct {
 	PairCode   string
 	RoutingKey string
 	Body       []byte
+}
+
+// RawPublisher 可选的 WS 发布器：DEX 模式下由引擎注入 WS Hub
+// （核心包不依赖 dex 包，通过函数注入避免反向依赖）
+type RawPublisher func(channel string, data []byte)
+
+// wsChannelFromRoutingKey 将 MQ routing key 映射为 WS 频道名：
+//
+//	market.{symbol}.kline.{interval} -> kline.{symbol}.{interval}
+//	market.{symbol}.trade.detail     -> trade.{symbol}
+//	market.{symbol}.ticker           -> ticker.{symbol}
+func wsChannelFromRoutingKey(key string) string {
+	parts := strings.SplitN(key, ".", 4)
+	if len(parts) < 3 {
+		return ""
+	}
+	switch parts[2] {
+	case "kline":
+		if len(parts) < 4 {
+			return ""
+		}
+		return "kline." + parts[1] + "." + parts[3]
+	case "trade":
+		return "trade." + parts[1]
+	case "ticker":
+		return "ticker." + parts[1]
+	}
+	return ""
 }
 
 /*
@@ -47,6 +76,17 @@ func (L *L2quote) sendToMQ(mqCh chan *MqMessage) {
 			beans := BatchMqPub(msg, mqCh, size)
 			count = count + int64(size) + 1
 			publishedPeriod = publishedPeriod + size + 1
+
+			// DEX 模式：注入 WS 发布器时直连 Hub 广播（替代 RabbitMQ）
+			if L.rawPublisher != nil {
+				for _, bean := range beans {
+					ch := wsChannelFromRoutingKey(bean.CMD)
+					if ch != "" {
+						L.rawPublisher(ch, bean.Data)
+					}
+				}
+				continue
+			}
 
 			data, err := json.Marshal(beans)
 			if err != nil {

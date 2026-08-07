@@ -1,16 +1,22 @@
 package market
 
 import (
+	"math"
+	"sync/atomic"
+	"time"
+
 	"github.com/AnuBookDEX/engine/internal/infra/common"
 	"github.com/AnuBookDEX/engine/internal/infra/config"
 	"github.com/AnuBookDEX/engine/internal/centralized/rabbitmq"
-	"math"
-	"time"
 
 	jsoniter "github.com/json-iterator/go"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// 深度超时日志限频：稳态下深度构建持续超时（积压场景）时，
+// 每条都打 Info 会洪泛日志（每小时数百 MB），10 秒最多 1 条
+var lastDepthTimeoutLogMs int64
 
 type MarketThread struct {
 	// 交易对标识
@@ -114,13 +120,17 @@ func (m *MarketThread) threadWS(broadcaster DepthBroadcaster) {
 		tsFromBuild := (ts02 - depthArr[0].Ts*int64(time.Millisecond))
 
 		if tsAll > 20 || (tsFromBuild > 50 && tsFromBuild < 10000) {
-			common.Info("DEPTH|MarketThread.threadWS|timeout|tsAll:", tsAll,
-				", tsBatch:", tsBatch,
-				", tsPub:", tsPub,
-				", tsFromBuild:", tsFromBuild,
-				", key:", depthArr[0].ch,
-				"depthChan_len:", len(m.depthChan),
-			)
+			nowMs := time.Now().UnixMilli()
+			last := atomic.LoadInt64(&lastDepthTimeoutLogMs)
+			if nowMs-last >= 10000 && atomic.CompareAndSwapInt64(&lastDepthTimeoutLogMs, last, nowMs) {
+				common.Info("DEPTH|MarketThread.threadWS|timeout|tsAll:", tsAll,
+					", tsBatch:", tsBatch,
+					", tsPub:", tsPub,
+					", tsFromBuild:", tsFromBuild,
+					", key:", depthArr[0].ch,
+					"depthChan_len:", len(m.depthChan),
+				)
+			}
 		}
 	}
 }

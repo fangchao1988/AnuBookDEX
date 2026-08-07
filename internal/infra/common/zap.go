@@ -40,9 +40,20 @@ func ZapInit() {
 		encoder = zapcore.NewConsoleEncoder(encoderConfig)
 	}
 
-	// 实现两个判断日志等级的interface
+	// 实现两个判断日志等级的interface。
+	// log.level 配置（debug/info/warn/error）控制 info 文件的最低级别；
+	// error 文件固定收 Warn 及以上。默认 info（原实现未生效导致 debug 刷屏，已修复）
+	minLevel := zapcore.InfoLevel
+	switch config.GetString("log.level", "info") {
+	case "debug":
+		minLevel = zapcore.DebugLevel
+	case "warn":
+		minLevel = zapcore.WarnLevel
+	case "error":
+		minLevel = zapcore.ErrorLevel
+	}
 	infoLevel := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {
-		return lvl <= zapcore.InfoLevel
+		return lvl >= minLevel && lvl <= zapcore.InfoLevel
 	})
 
 	errorLevel := zap.LevelEnablerFunc(func(lvl zapcore.Level) bool {

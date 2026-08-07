@@ -409,12 +409,18 @@ func (book *OrderBook) canFilledFokOrder(fokOrder *Order) (bool, OrderState) {
 		var orderSet = book.orderSet(Buy)
 		it := orderSet.Iterator()
 		amount := decimal.New(0, 0)
+		firstIteration := true
+		var referencePrice decimal.Decimal // best bid price as circuit center
 		for it.Next() {
 			order := it.Value().(*Order)
-			// CircuitRate 保护判断
-			if !order.CircuitRate.Equals(decimal.Zero) &&
+			// CircuitRate 保护判断：使用 FOK 订单自身的熔断比例，以最优对手价为基准
+			if firstIteration {
+				referencePrice = order.Price
+				firstIteration = false
+			}
+			if !fokOrder.CircuitRate.Equals(decimal.Zero) &&
 				((decimal.New(1, 0).Sub(fokOrder.CircuitRate).
-					Mul(fokOrder.Price)).
+					Mul(referencePrice)).
 					GreaterThanOrEqual(order.Price)) { // 超出范围结束
 				common.Debug("fok 卖单超过限价范围", fokOrder.CircuitRate)
 				return false, CircuitCanceled
@@ -434,13 +440,19 @@ func (book *OrderBook) canFilledFokOrder(fokOrder *Order) (bool, OrderState) {
 		common.Debug("fok 买单", fokOrder.BuyOrSell)
 		it := orderSet.Iterator()
 		amount := decimal.New(0, 0)
+		firstIteration := true
+		var referencePrice decimal.Decimal // best ask price as circuit center
 		for it.Next() {
 
 			order := it.Value().(*Order)
-			// CircuitRate 保护判断
-			if !order.CircuitRate.Equals(decimal.Zero) &&
-				((decimal.New(1, 0).Add(order.CircuitRate).
-					Mul(fokOrder.Price)).LessThanOrEqual(order.Price)) { // 超出范围结束
+			// CircuitRate 保护判断：使用 FOK 订单自身的熔断比例，以最优对手价为基准
+			if firstIteration {
+				referencePrice = order.Price
+				firstIteration = false
+			}
+			if !fokOrder.CircuitRate.Equals(decimal.Zero) &&
+				((decimal.New(1, 0).Add(fokOrder.CircuitRate).
+					Mul(referencePrice)).LessThanOrEqual(order.Price)) { // 超出范围结束
 				return false, CircuitCanceled
 			}
 

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-基于 Go 1.21 编写的加密货币现货交易**撮合引擎**，支持**集中式**和 **DEX（Anubis Chain）** 双模式运行。
+基于 Go 1.21 编写的加密货币现货交易**撮合引擎**，支持**集中式**与 **DEX 双链（Anubis + Aleo）同步开发** 多模式运行。
 - **集中式模式**：从 MySQL 序列表中轮询订单，使用价格-时间优先的订单簿进行撮合，结果持久化到 MySQL，并通过 RabbitMQ 发布实时行情（深度、K线、成交明细、Ticker）。订单簿状态通过 gob 编码快照（本地磁盘 + S3）进行恢复。
-- **DEX 模式**：Anubis Chain 事件订阅 → 隐私解密 → 撮合 → 链上 ZK 结算 + WebSocket 行情广播。
+- **DEX 模式（双链：Anubis + Aleo 同步开发）**：Anubis Chain 事件订阅 → 隐私解密 → 撮合 → 链上 ZK 结算 + WebSocket 行情广播。
 
 ## 构建与运行
 
@@ -14,8 +14,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # macOS 本地构建（集中式模式，产出 exchange.bin）
 make mac tag=<release-tag>
 
-# macOS 本地构建（DEX 模式，产出 engine.bin）
-make dex tag=<release-tag>
+# macOS 本地构建（DEX - Anubis 链，产出 engine-anubis.bin）
+make anubis tag=<release-tag>
+
+# macOS 本地构建（DEX - Aleo 链，产出 engine-aleo.bin）
+make aleo tag=<release-tag>
 
 # Linux 构建（Docker 交叉编译）
 make tag=<release-tag>
@@ -30,7 +33,7 @@ go test -count=1 ./internal/core/match/
 go test -count=1 -run TestMatchLimit ./internal/core/match/
 ```
 
-入口点位于 `cmd/exchange/main.go`（集中式）和 `cmd/engine/main.go`（DEX）。HTTP 健康检查默认监听 9000 端口。配置从 `./conf/config.yaml` 加载，可通过 `CONFIG_FILE` 环境变量覆盖。
+入口点位于 `cmd/exchange/main.go`（集中式）、`cmd/engine/anubis/main.go`（DEX - Anubis 链）与 `cmd/engine/aleo/main.go`（DEX - Aleo 链）。撮合核心共享，链后端通过 `internal/dex/chain` 的 `ChainAdapter` 接口（`OrderSource`/`SettlementSink`）注入，实现位于 `internal/dex/chain/{anubis,aleo}`；共享启动逻辑在 `internal/dex/runner/engine.go` 的 `StartEngine`。HTTP 健康检查默认监听 9000 端口。配置从 `./conf/config.yaml` 加载（`chain.anubis.*` / `chain.aleo.*` 分段），可通过 `CONFIG_FILE` 环境变量覆盖。
 
 ## 架构
 

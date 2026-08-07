@@ -26,12 +26,15 @@ conf/preconf
 logs/
 *.log
 
-# Snapshots
-sp/*.gob
-sp/*-snapshot-go
+# Snapshots（l2quote 行情快照目录：sp=集中式/Anubis，sp-aleo*=Aleo 联调隔离目录）
+sp/
+sp-aleo-p3/
 
 # Data directories
 data/
+
+# Leo 合约编译产物（leo build 生成：程序二进制 + abi.json）
+contracts/leo/build/
 
 # IDE
 .idea/

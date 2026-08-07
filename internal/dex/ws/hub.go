@@ -130,6 +130,12 @@ func (h *Hub) BroadcastTrade(symbol string, trade *l2quote.TradeDetail) {
 	}
 }
 
+// BroadcastRaw 广播已序列化消息到指定频道（DEX 模式：l2quote 直连 Hub，
+// 消息体由 l2quote 生成，避免二次序列化）
+func (h *Hub) BroadcastRaw(channel string, data []byte) {
+	h.broadcast <- &message{channel: channel, data: data}
+}
+
 // Subscribe 客户端订阅频道
 func (h *Hub) Subscribe(clientID string, channels []string) error {
 	h.mu.Lock()

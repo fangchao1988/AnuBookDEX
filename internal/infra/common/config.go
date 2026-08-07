@@ -63,6 +63,8 @@ func LoadConfigViper() error {
 	}
 
 	viper.BindEnv("app.seq", "CAPTAIN_SEQ")
+	viper.BindEnv("chain.anubis.private-key", "ANUBIS_PRIVATE_KEY")
+	viper.BindEnv("chain.aleo.private-key", "ALEO_PRIVATE_KEY")
 
 	err := viper.ReadInConfig()
 	fmt.Printf("get envConf:%#v;exist:%#v;ConfFile:%#v; err:%#v\n", envConf, exist, ConfFile, err)
