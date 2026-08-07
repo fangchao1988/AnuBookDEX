@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useSettings } from '../../stores/settings'
 import { useUi } from '../../stores/ui'
 import { TICKER } from '../../mock/market'
@@ -26,7 +25,6 @@ const PAIRS = [
 
 // 顶栏：对齐原型 #topbar（模式切换/交易对/Ticker/工具按钮/钱包）
 export function TopBar() {
-  const navigate = useNavigate()
   const {
     tradingMode,
     setTradingMode,
@@ -40,8 +38,11 @@ export function TopBar() {
   const openModal = useUi((s) => s.openModal)
   const walletAddress = useWallet((s) => s.address)
   const walletConnect = useWallet((s) => s.connect)
+  const walletDisconnect = useWallet((s) => s.disconnect)
   const [pairOpen, setPairOpen] = useState(false)
+  const [walletOpen, setWalletOpen] = useState(false)
   const pairRef = useRef<HTMLDivElement>(null)
+  const walletRef = useRef<HTMLDivElement>(null)
 
   // 实时行情：Ticker + 连接状态（未连接时回退 mock）
   const channelSymbol = toChannelSymbol(pair)
@@ -63,6 +64,7 @@ export function TopBar() {
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (pairRef.current && !pairRef.current.contains(e.target as Node)) setPairOpen(false)
+      if (walletRef.current && !walletRef.current.contains(e.target as Node)) setWalletOpen(false)
     }
     document.addEventListener('click', onClick)
     return () => document.removeEventListener('click', onClick)
@@ -175,14 +177,38 @@ export function TopBar() {
       >
         <IconEyeOff className={`w-4 h-4 ${simpleMode ? 'text-up' : ''}`} />
       </button>
-      <button
-        className={`border-none px-4 py-[7px] rounded-md font-semibold text-xs cursor-pointer hover:opacity-90 ${
-          walletAddress ? 'bg-bg-tertiary text-text-primary border border-line' : 'bg-blue text-white'
-        }`}
-        onClick={walletAddress ? () => navigate('/assets') : () => void walletConnect().catch(() => {})}
-      >
-        {walletAddress ? `${truncateAddress(walletAddress)} ▾` : '连接钱包'}
-      </button>
+      {/* 钱包：未连接 -> 连接按钮；已连接 -> 地址下拉（断开连接） */}
+      <div className="relative" ref={walletRef}>
+        <button
+          className={`border-none px-4 py-[7px] rounded-md font-semibold text-xs cursor-pointer hover:opacity-90 ${
+            walletAddress ? 'bg-bg-tertiary text-text-primary border border-line' : 'bg-blue text-white'
+          }`}
+          onClick={
+            walletAddress
+              ? () => setWalletOpen((v) => !v)
+              : () => void walletConnect().catch(() => {})
+          }
+        >
+          {walletAddress ? `${truncateAddress(walletAddress)} ▾` : '连接钱包'}
+        </button>
+        {walletOpen && walletAddress && (
+          <div className="absolute top-full right-0 bg-bg-secondary border border-line rounded-md min-w-[220px] z-50 mt-1 shadow-dropdown">
+            <div className="px-3.5 py-2.5 border-b border-line">
+              <div className="text-[10px] text-text-muted mb-0.5">已连接 Aleo 网络</div>
+              <div className="font-mono text-xs text-text-secondary break-all">{walletAddress}</div>
+            </div>
+            <div
+              className="px-3.5 py-2 text-xs text-down cursor-pointer hover:bg-bg-hover"
+              onClick={() => {
+                walletDisconnect()
+                setWalletOpen(false)
+              }}
+            >
+              断开连接
+            </div>
+          </div>
+        )}
+      </div>
     </header>
   )
 }

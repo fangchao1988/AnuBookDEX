@@ -4,7 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/AnuBookDEX/engine/internal/infra/common"
 )
 
 // HandleOrderTx GET /order/tx/{tx_id} 交易查询代理：
@@ -35,6 +39,54 @@ func HandleOrderTx(rpc *RESTClient, programID string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"ciphertext": ct})
 	}
+}
+
+// HandleBalance GET /api/v1/balance/{address} 链上 ALEO 公开余额查询：
+// snarkOS credits.aleo account mapping（public balance），返回 ALEO 数量（1 ALEO = 1e6 microcredits）
+func HandleBalance(rpc *RESTClient) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		addr := strings.TrimPrefix(r.URL.Path, "/api/v1/balance/")
+		addr = strings.TrimSpace(addr)
+		if addr == "" || strings.Contains(addr, "/") {
+			http.Error(w, "bad address", http.StatusBadRequest)
+			return
+		}
+		if rpc == nil {
+			http.Error(w, "rpc not configured", http.StatusServiceUnavailable)
+			return
+		}
+		plain, err := rpc.GetProgramMapping("credits.aleo", "account", addr)
+		if err != nil {
+			// 地址无记录（未激活账户）视为 0，不报错
+			common.Debug("aleo balance: mapping query failed (may be zero balance)", addr, err)
+			writeBalance(w, 0)
+			return
+		}
+		// mapping 值格式：{ microcredits: 123456u64 }
+		micro := parseMicrocredits(plain)
+		writeBalance(w, micro)
+	}
+}
+
+func writeBalance(w http.ResponseWriter, microcredits uint64) {
+	w.Header().Set("Content-Type", "application/json")
+	// 1 ALEO = 1,000,000 microcredits
+	aleo := float64(microcredits) / 1e6
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"aleo":         aleo,
+		"microcredits": microcredits,
+	})
+}
+
+// parseMicrocredits 从 mapping plaintext 提取 microcredits（{ microcredits: 123u64 }）
+func parseMicrocredits(plain string) uint64 {
+	re := regexp.MustCompile(`microcredits:\s*([0-9]+)u64`)
+	m := re.FindStringSubmatch(plain)
+	if len(m) < 2 {
+		return 0
+	}
+	v, _ := strconv.ParseUint(m[1], 10, 64)
+	return v
 }
 
 // extractRecordCiphertext 从交易回执中提取指定 program 的 record ciphertext。

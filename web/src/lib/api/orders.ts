@@ -101,3 +101,15 @@ export async function fetchOperatorAddress(): Promise<string> {
   const data = (await res.json()) as { address: string }
   return data.address
 }
+
+// 链上 ALEO 公开余额（引擎代理 snarkOS credits.aleo account mapping）
+export interface AleoBalance {
+  aleo: number
+  microcredits: number
+}
+
+export async function fetchAleoBalance(address: string): Promise<AleoBalance> {
+  const res = await fetch(`/api/v1/balance/${encodeURIComponent(address)}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return (await res.json()) as AleoBalance
+}

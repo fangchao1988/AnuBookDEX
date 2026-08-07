@@ -18,8 +18,9 @@ export interface PlacedOrder {
 }
 
 export interface WalletBalances {
-  usdt: string
-  base: string // base 币种（如 ETH）余额
+  aleo: string // ALEO（public + shielded）
+  usdt: string // anubook_dex_p2 Token record（测试币）
+  base: string // base 币种（ETH）Token record
 }
 
 export interface AleoWallet {

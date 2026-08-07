@@ -52,7 +52,7 @@ export class LeoWalletAdapter implements AleoWallet {
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
     // 链上余额：requestRecords(program) 聚合 Token record（token_id 1=ETH, 2=USDT）
     // 注：需真钱包实测 record 结构与解密；当前返回占位
-    return { usdt: '--', base: '--' }
+    return { aleo: '--', usdt: '--', base: '--' }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
@@ -102,7 +102,7 @@ export class DevWallet implements AleoWallet {
   }
 
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
-    return { usdt: '128,456.78', base: '0.5234' }
+    return { aleo: '--', usdt: '128,456.78', base: '0.5234' }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
