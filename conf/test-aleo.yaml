@@ -1,0 +1,70 @@
+# AnuBookDEX Aleo 引擎生产配置模板
+#
+# 使用：
+#   docker compose 默认挂载本文件为引擎 config（docker-compose.yml）
+#   密钥不落盘：ALEO_PRIVATE_KEY / ALEO_VIEW_KEY 通过 .env.aleo 注入
+#
+# 切换测试网/主网：修改 rpc-endpoint 与 network（需对应链的合约部署与余额）
+
+app:
+  seq: 1
+
+# 交易对列表（引擎撮合/行情）
+symbols:
+  - ETH_USDT
+  - BTC_USDT
+
+symbol-info:
+  default:
+    amount-scale: 18
+    price-scale: 18
+    l2quote-price-scale: 2
+    depth-10percent-capacity: 200
+    depth-steps:
+      "0": [0.000000000000000001, 150]
+      "1": [0.00001, 150]
+      "2": [0.0001, 150]
+      "3": [0.001, 150]
+      "4": [0.01, 150]
+      "5": [0.1, 150]
+      "6": [0.000000000000000001, 20]
+      "7": [0.00001, 20]
+      "8": [0.0001, 20]
+      "9": [0.001, 20]
+      "10": [0.01, 20]
+      "11": [0.1, 20]
+
+scheduler:
+  snapshot: [0, 60000]
+  orderbook-report: [0, 1500000]
+
+# 日志收敛（生产不建议 debug）
+log:
+  level: info
+
+l2quote:
+  mq-send-interval-ms: 500
+  kline-forward-limit: 1440
+  snapshot:
+    path: "./sp-aleo-p3/"        # 容器内路径（docker volume engine-sp 挂载）
+    n-history: 10
+  make-new-kline-at-sec: 2
+
+batch_result: 90
+
+rocksdb:
+  data-dir: "./data/aleo-snapshot-p3"   # 容器内路径（docker volume engine-data 挂载）
+
+http:
+  port: 9000
+
+chain:
+  aleo:
+    rpc-endpoint: "https://api.explorer.provable.com/v1"   # 生产 RPC（testnet；mainnet 需替换）
+    program-id: "anubook_dex_p2.aleo"                      # 链上合约（与部署一致）
+    private-key: ""            # 不落盘：ALEO_PRIVATE_KEY（env 注入）
+    view-key-private: ""       # 不落盘：ALEO_VIEW_KEY（env 注入；隐私下单解密）
+    address: "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal"  # operator（结算接收）
+    require-ciphertext: true   # 生产强制订单密文（拒绝占位提交）
+    settlement-enabled: true   # 链上结算（leo execute settle）
+    settlement-batch-size: 100

@@ -15,10 +15,11 @@ import { fetchAleoBalance, fetchOperatorAddress } from '../api/orders'
 
 export const PROGRAM_ID = 'anubook_dex_p2.aleo'
 
-// 解析 Aleo 类型化字符串（'123u64' -> 123；'2u32' -> 2；纯数字原样返回）
+// 解析 Aleo 类型化字符串（'123u64' -> 123；'2u32' -> 2；'...group' -> 0；纯数字原样返回）
 function parseTyped(v: string | undefined): number {
   if (!v) return 0
-  const n = Number(String(v).replace(/[a-z]+$/i, ''))
+  // 类型后缀为字母+数字（u64/u32/...），需整体剥掉：/[a-z]+\d+$/ 匹配 'u64'/'u32'
+  const n = Number(String(v).replace(/[a-z]+\d+$/i, ''))
   return Number.isFinite(n) ? n : 0
 }
 
@@ -121,12 +122,22 @@ export class ShieldWalletAdapter implements AleoWallet {
     // operator 地址来自引擎配置（chain.aleo.address），place_order 的 Order record 归 operator
     const operator = params.operator || (await fetchOperatorAddress())
     const neededToken = params.side === 0 ? params.quoteToken : params.baseToken
+    // 锁仓量：买单 = price×amount（quote 金额），卖单 = amount（base 数量）
+    const neededAmount =
+      params.side === 0
+        ? Math.floor(Number(params.price) * Number(params.amount))
+        : Math.floor(Number(params.amount))
     const inputs: TransactionInput[] = [
       {
         type: 'record',
         program: PROGRAM_ID,
         recordname: 'Token',
-        filters: { token_id: { eq: `${neededToken}u32` } },
+        // 精确匹配：token_id + 金额（合约 MVP 断言 fund.amount == price*amount 严格相等，
+        // 钱包自动选择必须锁定金额，否则会选到任意金额的 record 导致断言失败）
+        filters: {
+          token_id: { eq: `${neededToken}u32` },
+          amount: { eq: `${neededAmount}u64` },
+        },
       },
       `${params.orderId}u128`,
       `${params.side}u8`,
@@ -143,10 +154,61 @@ export class ShieldWalletAdapter implements AleoWallet {
       inputs,
       fee: 0, // Shield 覆盖部分 gas（免费转账模式）；place_order 费用模式待实测
     })
-    // 引擎代理：txId -> Order record ciphertext（record owner 为 operator，需节点查询输出）
-    const res = await fetch(`/order/tx/${encodeURIComponent(result.transactionId)}`)
-    if (!res.ok) throw new Error(`获取 Order record 失败: ${await res.text()}`)
-    const data = (await res.json()) as { ciphertext: string }
-    return { txId: result.transactionId, ciphertext: data.ciphertext }
+    // Shield 返回内部 ID（shield_...），经 transactionStatus 轮询等到链上确认
+    // （status=accepted 才上链；期间 transactionId 可能返回但链上不可见）
+    const shieldId = result.transactionId
+    let onchainId = ''
+    for (let i = 0; i < 60; i++) {
+      const status = await this.adapter.transactionStatus(shieldId)
+      if (status.status === 'accepted' && status.transactionId) {
+        onchainId = status.transactionId
+        break
+      }
+      if (status.status === 'failed' || status.status === 'rejected') {
+        throw new Error(`place_order 交易失败: ${status.status}${status.error ? `: ${status.error}` : ''}`)
+      }
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+    if (!onchainId) throw new Error('等待链上确认超时（120s），请稍后查询委托状态')
+    // 引擎代理：onchain txId -> Order record ciphertext（record owner 为 operator）。
+    // 链上确认后节点索引可能有延迟，查询重试最多 30s
+    let lastErr = ''
+    for (let i = 0; i < 15; i++) {
+      const res = await fetch(`/order/tx/${encodeURIComponent(onchainId)}`)
+      if (res.ok) {
+        const data = (await res.json()) as { ciphertext: string }
+        return { txId: onchainId, ciphertext: data.ciphertext }
+      }
+      lastErr = await res.text()
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+    throw new Error(`获取 Order record 失败: ${lastErr || '超时'}`)
+  }
+
+  // 铸测试币：mint(amount: u64, token_id: u32)，Token record 归执行者（合约 main.leo）
+  async mintToken(tokenId: number, amount: number): Promise<void> {
+    if (!this.adapter) throw new Error('Shield 钱包未连接')
+    await this.adapter.executeTransaction({
+      program: PROGRAM_ID,
+      function: 'mint',
+      inputs: [`${Math.floor(amount)}u64`, `${tokenId}u32`],
+      fee: 0, // Shield 覆盖 gas 模式；mint 费用模式待实测
+    })
+  }
+
+  // 部署合约：钱包内置 prover 生成证书，ALEO 付部署费（Aleo Wallet Standard executeDeployment）。
+  // 注意：程序名 <10 字符触发 namespace 溢价（hello43=1000+ ALEO）；anubook_dex_p2（14 字符）无溢价
+  async deployProgram(): Promise<string> {
+    if (!this.adapter || !this.address) throw new Error('Shield 钱包未连接')
+    const res = await fetch('/programs/anubook_dex_p2.aleo')
+    if (!res.ok) throw new Error(`加载合约程序失败: HTTP ${res.status}`)
+    const program = await res.text()
+    const result = await this.adapter.executeDeployment({
+      program,
+      address: this.address,
+      priorityFee: 100000, // 官方 SDK 文档示例值（microcredits，0.1 ALEO）
+      privateFee: false,
+    })
+    return result.transactionId
   }
 }

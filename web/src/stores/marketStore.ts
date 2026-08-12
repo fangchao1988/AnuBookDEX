@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { wsClient, type WsStatus, type WsPayload } from '../lib/ws/client'
+import { fetchMarketTrades } from '../lib/api/orders'
 
 // 实时行情 store（P2）：订阅频道 -> 增量维护订单簿/K线/成交/Ticker。
 // 频道命名沿用后端：depth.BTC_USDT / kline.BTC_USDT.1min / trade.BTC_USDT / ticker.BTC_USDT
@@ -136,6 +137,41 @@ wsClient.onMessage(({ payload }) => {
 
 // 连接状态同步到 store（供 UI 显示 LIVE/断线标识）
 wsClient.onStatus((status) => useMarket.getState().setStatus(status))
+
+// 拉取市场最近成交历史（刷新页面后回放；merge 到实时成交列表头部）
+export async function loadTradeHistory(symbol: string) {
+  try {
+    const frames = await fetchMarketTrades(symbol, 50)
+    const rows: TradeRow[] = []
+    for (const f of frames) {
+      for (const t of f.data ?? []) {
+        rows.push({
+          price: String(t.price),
+          qty: String(t.vol),
+          time: Number(t.ts),
+          side: t.direction === 'buy' ? 'buy' : 'sell',
+        })
+      }
+    }
+    useMarket.setState((s) => {
+      const prev = s.trades[symbol] ?? []
+      // 历史 + 现有实时（去重：按 id 前缀时间近似去重 —— 简单合并，实时帧会覆盖）
+      const merged = [...prev]
+      const seen = new Set(merged.map((m) => `${m.time}:${m.price}:${m.qty}`))
+      for (const r of rows) {
+        const key = `${r.time}:${r.price}:${r.qty}`
+        if (!seen.has(key)) {
+          merged.push(r)
+          seen.add(key)
+        }
+      }
+      merged.sort((a, b) => b.time - a.time)
+      return { trades: { ...s.trades, [symbol]: merged.slice(0, MAX_TRADES) } }
+    })
+  } catch {
+    // 历史拉取失败不阻断（WS 实时仍工作）
+  }
+}
 
 function applyDepth(symbol: string, p: WsPayload) {
   const bids = (p.bids as [string, string][]) ?? []

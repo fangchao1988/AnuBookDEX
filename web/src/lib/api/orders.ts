@@ -51,7 +51,7 @@ export interface OrderRecord {
   price: string
   amount: string
   filled: string
-  status: 'waiting' | 'partial' | 'filled'
+  status: 'waiting' | 'partial' | 'filled' | 'canceled'
   create_at: number
 }
 
@@ -66,10 +66,34 @@ export async function fetchOrders(params: { trader?: string; symbol?: string; li
 }
 
 // 状态显示映射（后端 -> 前端 UI）
-export const STATUS_LABEL: Record<OrderRecord['status'], { text: string; cls: 'orange' | 'blue' | 'green' }> = {
+export const STATUS_LABEL: Record<OrderRecord['status'], { text: string; cls: 'orange' | 'blue' | 'green' | 'red' }> = {
   waiting: { text: '等待中', cls: 'orange' },
   partial: { text: '部分成交', cls: 'blue' },
   filled: { text: '已完成', cls: 'green' },
+  canceled: { text: '已撤销', cls: 'red' },
+}
+
+// 结算状态显示（链上 settle）
+export const SETTLE_LABEL: Record<string, { text: string; cls: 'green' | 'orange' | 'red' }> = {
+  settled: { text: '已结算', cls: 'green' },
+  pending: { text: '待结算', cls: 'orange' },
+  failed: { text: '结算失败', cls: 'red' },
+}
+
+// 链上撤单：POST /order/cancel
+export async function cancelOrder(orderId: number): Promise<AleoOrderResult> {
+  try {
+    const res = await fetch('/order/cancel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId }),
+    })
+    const text = await res.text()
+    if (res.ok) return { ok: true }
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
 }
 
 // 成交记录（P3 真实数据）：GET /api/v1/trades?trader=&symbol=&limit=
@@ -82,6 +106,40 @@ export interface TradeRecord {
   trader: string
   taker: string
   ts: number
+  settle_status?: 'pending' | 'settled' | 'failed'
+}
+
+// 隐私下单：不发送明文订单，仅提交链上交易 ID（引擎用 operator view key 解密撮合）
+export async function submitPrivacyOrder(req: {
+  tx_id: string
+  symbol: string
+  trader: string
+}): Promise<AleoOrderResult> {
+  try {
+    const res = await fetch('/order/privacy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+    const text = await res.text()
+    if (res.ok) return { ok: true }
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// 市场最近成交历史（引擎 Hub 缓存回放，market.fills 原始帧数组，最新在前）
+export async function fetchMarketTrades(symbol: string, limit = 50): Promise<WsTradeFrame[]> {
+  const res = await fetch(`/api/v1/market/trades?symbol=${encodeURIComponent(symbol)}&limit=${limit}`)
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return (await res.json()) as WsTradeFrame[]
+}
+
+export interface WsTradeFrame {
+  type: string
+  pairCode: string
+  data: { vol: string; ts: number; id: number; price: string; direction: string }[]
 }
 
 export async function fetchTrades(params: { trader?: string; symbol?: string; limit?: number } = {}): Promise<TradeRecord[]> {
@@ -109,7 +167,20 @@ export interface AleoBalance {
 }
 
 export async function fetchAleoBalance(address: string): Promise<AleoBalance> {
-  const res = await fetch(`/api/v1/balance/${encodeURIComponent(address)}`)
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  return (await res.json()) as AleoBalance
+  // 优先引擎代理；失败或返回 0（旧引擎解析 bug）时直连 snarkOS（CORS 开放，作为兜底）
+  try {
+    const res = await fetch(`/api/v1/balance/${encodeURIComponent(address)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = (await res.json()) as AleoBalance
+    if (data.aleo > 0) return data
+    throw new Error('engine balance returned 0')
+  } catch {
+    const direct = await fetch(
+      `https://api.explorer.provable.com/v1/testnet/program/credits.aleo/mapping/account/${encodeURIComponent(address)}`,
+    )
+    if (!direct.ok) throw new Error(`HTTP ${direct.status}`)
+    const raw = (await direct.text()).replace(/"/g, '').replace(/u64$/, '')
+    const microcredits = Number(raw)
+    return { aleo: microcredits / 1e6, microcredits }
+  }
 }

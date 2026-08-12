@@ -1,0 +1,102 @@
+# AnuBookDEX 镜像构建推送 + 自动部署
+#
+# 触发：
+#   - push tag v*   → 构建推送（版本 tag）并自动部署到服务器
+#   - push main     → 构建推送 latest
+#   - 手动触发（workflow_dispatch）
+#
+# 镜像目标：GHCR（ghcr.io/{repo}/engine、ghcr.io/{repo}/web）
+#
+# 服务器自动部署需要配置 Secrets：
+#   SERVER_HOST     服务器 IP/域名
+#   SERVER_USER     SSH 用户（如 root）
+#   SERVER_SSH_KEY  SSH 私钥（部署用户）
+#
+# 密钥安全：构建不含任何链上密钥；服务器 .env.aleo 手动维护（CI 不接触）
+
+name: Docker Build & Deploy
+
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ─── 引擎镜像（含 leo CLI，链上结算/撤单依赖） ───
+      - name: Build & Push engine
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/engine/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/engine:latest
+            ghcr.io/${{ github.repository }}/engine:${{ steps.meta.outputs.tag }}
+
+      # ─── 前端镜像（Nginx 托管 + 反向代理） ───
+      - name: Build & Push web
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          file: web/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/web:latest
+            ghcr.io/${{ github.repository }}/web:${{ steps.meta.outputs.tag }}
+
+  deploy:
+    name: Deploy to Server
+    needs: build-and-push
+    # 仅打 tag（发布）时自动部署；main 分支只推镜像
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+            cd /www/wwwroot/AnuBookDEX
+            git pull --rebase || echo "⚠️ git pull 失败，使用当前代码"
+            # 服务器本地构建部署（镜像包含 leo CLI 与前端产物）
+            docker compose up -d --build
+            docker compose ps

@@ -36,11 +36,11 @@ export default function LpPage() {
         </div>
       </div>
 
-      <h3 className="text-[15px] text-text-secondary mt-6 mb-3 border-b border-line pb-2">RocketSwap 流动性互通</h3>
+      <h3 className="text-[15px] text-text-secondary mt-6 mb-3 border-b border-line pb-2">Arcane Finance 流动性互通</h3>
       <div className="bg-bg-secondary border border-line rounded-lg p-4">
         <div className="flex justify-between items-center">
           <div>
-            <div className="font-bold">AleoBook 订单簿 ↔ RocketSwap AMM</div>
+            <div className="font-bold">AleoBook 订单簿 ↔ Arcane Finance AMM</div>
             <div className="text-xs text-text-muted mt-1">AI路由统一调度 · 全域资金利用率提升 18% · 双向流动性互通</div>
           </div>
           <span className="text-[11px] px-2 py-0.5 rounded bg-up-bg text-up font-semibold">已连接</span>

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +27,49 @@ type Hub struct {
 	// 注册/注销
 	register   chan *Client
 	unregister chan *Client
+
+	// 最近成交缓存（market.fills 原始 JSON，供刷新页面回放历史；上限 100/交易对）
+	tradesMu    sync.Mutex
+	recentTrades map[string][]json.RawMessage
+}
+
+const MaxRecentTrades = 100
+
+// cacheTrade 缓存交易对最近成交（最新在前，上限 MaxRecentTrades）
+func (h *Hub) cacheTrade(symbol string, data []byte) {
+	h.tradesMu.Lock()
+	defer h.tradesMu.Unlock()
+	list := h.recentTrades[symbol]
+	list = append(list, json.RawMessage(data))
+	if len(list) > MaxRecentTrades {
+		list = list[len(list)-MaxRecentTrades:]
+	}
+	h.recentTrades[symbol] = list
+}
+
+// HandleMarketTrades GET /api/v1/market/trades?symbol=&limit= 最近成交历史
+// （市场逐笔明细 market.fills 的缓存回放；区别于 /api/v1/trades 的用户订单成交）
+func (h *Hub) HandleMarketTrades(w http.ResponseWriter, r *http.Request) {
+	symbol := strings.TrimSpace(r.URL.Query().Get("symbol"))
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= MaxRecentTrades {
+			limit = n
+		}
+	}
+	h.tradesMu.Lock()
+	list := h.recentTrades[symbol]
+	h.tradesMu.Unlock()
+	if len(list) > limit {
+		list = list[len(list)-limit:]
+	}
+	w.Header().Set("Content-Type", "application/json")
+	// 最新在前（与 WS 推送顺序一致：新成交在列表头部）
+	out := make([]json.RawMessage, len(list))
+	for i := range list {
+		out[len(list)-1-i] = list[i]
+	}
+	json.NewEncoder(w).Encode(out)
 }
 
 type message struct {
@@ -35,11 +80,12 @@ type message struct {
 // NewHub 创建 WebSocket Hub
 func NewHub() *Hub {
 	h := &Hub{
-		clients:    make(map[string]*Client),
-		subs:       make(map[string]map[string]struct{}),
-		broadcast:  make(chan *message, 10000),
-		register:   make(chan *Client, 100),
-		unregister: make(chan *Client, 100),
+		clients:      make(map[string]*Client),
+		subs:         make(map[string]map[string]struct{}),
+		broadcast:    make(chan *message, 10000),
+		register:     make(chan *Client, 100),
+		unregister:   make(chan *Client, 100),
+		recentTrades: make(map[string][]json.RawMessage),
 	}
 	go h.run()
 	common.Info("websocket hub: started")
@@ -72,6 +118,10 @@ func (h *Hub) run() {
 			common.Info(fmt.Sprintf("websocket: client %s disconnected (total: %d)", client.id, len(h.clients)))
 
 		case msg := <-h.broadcast:
+			// 缓存最近成交（trade.{symbol} 频道），供页面刷新后回放历史
+			if channel, ok := strings.CutPrefix(msg.channel, "trade."); ok {
+				h.cacheTrade(channel, msg.data)
+			}
 			h.mu.RLock()
 			clientIDs, ok := h.subs[msg.channel]
 			if !ok {

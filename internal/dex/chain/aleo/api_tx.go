@@ -78,15 +78,23 @@ func writeBalance(w http.ResponseWriter, microcredits uint64) {
 	})
 }
 
-// parseMicrocredits 从 mapping plaintext 提取 microcredits（{ microcredits: 123u64 }）
+// parseMicrocredits 从 mapping plaintext 提取 microcredits。
+// snarkOS 实际响应格式为裸值："45685966u64"（带引号 + u64 类型后缀）；
+// 兼容较旧的 { microcredits: 123u64 } 包装格式。
 func parseMicrocredits(plain string) uint64 {
-	re := regexp.MustCompile(`microcredits:\s*([0-9]+)u64`)
-	m := re.FindStringSubmatch(plain)
-	if len(m) < 2 {
-		return 0
+	// 裸值格式："45685966u64"
+	re := regexp.MustCompile(`"([0-9]+)u64"`)
+	if m := re.FindStringSubmatch(plain); len(m) >= 2 {
+		v, _ := strconv.ParseUint(m[1], 10, 64)
+		return v
 	}
-	v, _ := strconv.ParseUint(m[1], 10, 64)
-	return v
+	// 兼容 { microcredits: 123u64 } 格式
+	re2 := regexp.MustCompile(`microcredits:\s*([0-9]+)u64`)
+	if m := re2.FindStringSubmatch(plain); len(m) >= 2 {
+		v, _ := strconv.ParseUint(m[1], 10, 64)
+		return v
+	}
+	return 0
 }
 
 // extractRecordCiphertext 从交易回执中提取指定 program 的 record ciphertext。
@@ -105,7 +113,11 @@ func extractRecordCiphertext(tx map[string]interface{}, programID string) (strin
 		if !ok {
 			continue
 		}
-		pid, _ := tr["program_id"].(string)
+		// 新版 snarkOS transition 字段为 program，旧版为 program_id（兼容两者）
+		pid, _ := tr["program"].(string)
+		if pid == "" {
+			pid, _ = tr["program_id"].(string)
+		}
 		if programID != "" && pid != programID {
 			continue
 		}
@@ -116,7 +128,9 @@ func extractRecordCiphertext(tx map[string]interface{}, programID string) (strin
 				continue
 			}
 			if om["type"] == "record" {
-				if v, ok := om["value"].(string); ok && strings.HasPrefix(v, "ciphertext1") {
+				if v, ok := om["value"].(string); ok &&
+					(strings.HasPrefix(v, "record1") || strings.HasPrefix(v, "ciphertext1")) {
+					// record1 = 新格式 record 密文；ciphertext1 = 旧格式（兼容）
 					return v, nil
 				}
 			}

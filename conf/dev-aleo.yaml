@@ -54,9 +54,10 @@ http:
 chain:
   aleo:
     rpc-endpoint: "https://api.explorer.provable.com/v1"
-    program-id: "anubook_dex_p2.aleo"
+    program-id: "anubook_dex_p2.aleo"   # 当前链上版本（mint-only）；p3 完整版待部署
     private-key: ""                    # ENV: ALEO_PRIVATE_KEY（本地联调可空）
+    view-key-private: ""               # ENV: ALEO_VIEW_KEY（隐私下单解密用，敏感不落盘）
     address: "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal"  # operator（与 conf/config.yaml 一致）
     require-ciphertext: false          # 本地联调允许空 ciphertext（生产默认 true）
-    settlement-enabled: false          # 本地联调跳过链上 settle（占位密文无法解密）
+    settlement-enabled: true           # 链上结算（leo execute settle 广播；需 ALEO_PRIVATE_KEY）
     settlement-batch-size: 100

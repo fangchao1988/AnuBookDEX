@@ -15,8 +15,8 @@ interface TradeState {
 }
 
 export const useTrade = create<TradeState>()((set) => ({
-  price: '68,150.00',
-  amount: '0.0000',
+  price: '1800.00',
+  amount: '1.0000',
   stopPrice: '',
   tp: '',
   sl: '',

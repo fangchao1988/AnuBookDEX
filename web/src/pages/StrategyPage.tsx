@@ -107,7 +107,7 @@ export default function StrategyPage() {
       <div className="bg-bg-secondary border border-line rounded-lg p-4">
         <div className="font-bold mb-2">路由状态面板</div>
         <RouteRow label="AleoBook 订单簿深度" value="优 (买卖价差 0.02%)" up />
-        <RouteRow label="RocketSwap AMM 深度" value="中等 (滑点 0.15%)" />
+        <RouteRow label="Arcane Finance AMM 深度" value="中等 (滑点 0.15%)" />
         <RouteRow label="AI推荐路径" value="AleoBook 订单簿 (节省 0.13%)" up bold />
         <RouteRow label="预计滑点" value="< 0.01%" up />
       </div>

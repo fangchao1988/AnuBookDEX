@@ -2,6 +2,7 @@ package aleo
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -84,8 +85,12 @@ func (s *Settlement) SubmitBatch(symbol string, mrs []*match.MatchResult) (strin
 			if err := s.executeSettle(makerCT, takerCT, price, amount); err != nil {
 				common.Error("aleo settlement: settle failed",
 					"maker", item.OrderId, "taker", takerID, "err", err)
+				// 结算状态回执（前端展示）
+				s.pool.UpdateTradeSettleStatus(item.OrderId, SettleFailed)
 				continue
 			}
+			// 结算成功回执（前端展示）
+			s.pool.UpdateTradeSettleStatus(item.OrderId, SettleSettled)
 			settled++
 		}
 	}
@@ -96,7 +101,14 @@ func (s *Settlement) SubmitBatch(symbol string, mrs []*match.MatchResult) (strin
 }
 
 // executeSettle 调用 leo execute settle <maker_ct> <taker_ct> <price>u64 <amount>u64 --broadcast
+// 注意：私钥必须显式传参（--private-key）——leo 读 .env 私钥会触发 InvalidCharacter bug；
+// 且 .env 的 PRIVATE_KEY 引号问题会导致解析失败，显式传参已实测可用
 func (s *Settlement) executeSettle(makerCT, takerCT string, price, amount uint64) error {
+	// 私钥兜底：config chain.aleo.private-key -> ALEO_PRIVATE_KEY（viper BindEnv 对嵌套 key 不可靠）
+	priv := s.privateKey
+	if priv == "" {
+		priv = os.Getenv("ALEO_PRIVATE_KEY")
+	}
 	args := []string{
 		"execute", "settle",
 		makerCT,
@@ -107,9 +119,11 @@ func (s *Settlement) executeSettle(makerCT, takerCT string, price, amount uint64
 		"--endpoint", s.rpcEndpoint,
 		"--network", s.network,
 		"--yes",
+		// 用链上版本程序构建证明（本地合约与链上字节码不同会导致广播被节点拒绝）
+		"--no-local",
 	}
-	if s.privateKey != "" {
-		args = append(args, "--private-key", s.privateKey)
+	if priv != "" {
+		args = append(args, "--private-key", priv)
 	}
 	cmd := exec.Command("leo", args...)
 	cmd.Dir = s.workingDir

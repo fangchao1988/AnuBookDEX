@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSettings } from '../../stores/settings'
 import { useWallet } from '../../stores/wallet'
 import { Tag } from '../../components/ui/Tag'
-import { fetchOrders, fetchTrades, STATUS_LABEL, type OrderRecord, type TradeRecord } from '../../lib/api/orders'
+import { cancelOrder, fetchOrders, fetchTrades, SETTLE_LABEL, STATUS_LABEL, type OrderRecord, type TradeRecord } from '../../lib/api/orders'
+import { Modal } from '../../components/ui/Modal'
 import { toChannelSymbol } from '../../lib/symbol'
 import { dateTimeStr } from '../../lib/format'
 
@@ -41,7 +42,25 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
   }, [loadOrders])
 
   const openOrders = orders.filter((o) => o.status === 'waiting' || o.status === 'partial')
-  const historyOrders = orders.filter((o) => o.status === 'filled')
+  const historyOrders = orders.filter((o) => o.status === 'filled' || o.status === 'canceled')
+
+  // 链上撤单：点击立即弹窗反馈；撤单处理中按钮禁用（防重复点击）
+  const [cancelDialog, setCancelDialog] = useState<{ orderId: number; msg: string; ok: boolean } | null>(null)
+  const [cancelingId, setCancelingId] = useState<number | null>(null)
+  const onCancel = async (orderId: number) => {
+    if (cancelingId !== null) return
+    setCancelingId(orderId)
+    setCancelDialog({ orderId, msg: '撤单已提交，等待链上确认…', ok: false })
+    const res = await cancelOrder(orderId)
+    if (res.ok) {
+      setCancelDialog({ orderId, msg: `订单 ${orderId} 已撤销成功`, ok: true })
+    } else {
+      setCancelDialog({ orderId, msg: `撤单失败: ${res.error ?? '未知错误'}`, ok: false })
+    }
+    setCancelingId(null)
+    void loadOrders()
+    window.setTimeout(() => setCancelDialog(null), 2500)
+  }
 
   const tabs: { key: BottomTab; label: string; ai?: boolean; perpOnly?: boolean }[] = [
     { key: 'open', label: `当前委托 (${openOrders.length})` },
@@ -72,7 +91,7 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
       <div className="flex-1 overflow-y-auto">
         {tab === 'open' && (
           <OrderTable
-            heads={['时间', '交易对', '方向', '类型', '价格', '数量', '已成交', '状态']}
+            heads={['时间', '交易对', '方向', '类型', '价格', '数量', '已成交', '状态', '操作']}
             rows={openOrders.map((o) => ({
               cells: [
                 dateTimeStr(o.create_at),
@@ -83,6 +102,15 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
                 o.amount,
                 o.filled,
                 <Tag variant={STATUS_LABEL[o.status].cls}>{STATUS_LABEL[o.status].text}</Tag>,
+                <button
+                  className={`text-blue bg-transparent border-none text-xs hover:underline ${
+                    cancelingId === o.order_id ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                  }`}
+                  disabled={cancelingId === o.order_id}
+                  onClick={() => void onCancel(o.order_id)}
+                >
+                  {cancelingId === o.order_id ? '撤销中…' : '撤销'}
+                </button>,
               ],
             }))}
           />
@@ -104,15 +132,13 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
             }))}
           />
         )}
-        {ordersError && (
-          <div className="px-3 py-2 text-[11px] text-down">{ordersError}</div>
-        )}
+        {ordersError && <div className="px-3 py-2 text-[11px] text-down">{ordersError}</div>}
         {tab !== 'trades' && tab !== 'funding' && tab !== 'ai' && orders.length === 0 && !ordersError && (
           <div className="p-5 text-center text-text-muted text-[13px]">暂无委托</div>
         )}
         {tab === 'trades' && (
           <OrderTable
-            heads={['时间', '交易对', '方向', '价格', '数量', '对手方']}
+            heads={['时间', '交易对', '方向', '价格', '数量', '对手方', '结算']}
             rows={trades.map((t) => ({
               cells: [
                 dateTimeStr(t.ts),
@@ -121,6 +147,9 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
                 t.price,
                 t.amount,
                 <span className="text-text-muted">{t.taker.slice(0, 10)}…</span>,
+                <Tag variant={SETTLE_LABEL[t.settle_status ?? 'pending'].cls}>
+                  {SETTLE_LABEL[t.settle_status ?? 'pending'].text}
+                </Tag>,
               ],
             }))}
           />
@@ -142,6 +171,17 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
           可链上溯源 · ZK 加密原始订单 · <a href="#" className="text-blue">批量撤销</a>
         </div>
       )}
+
+      {/* 撤单结果弹窗（点击撤销立即反馈） */}
+      <Modal open={cancelDialog !== null} onClose={() => setCancelDialog(null)} title="链上撤单">
+        <div className={`text-center py-2 ${cancelDialog?.ok ? 'text-up' : 'text-text-secondary'}`}>
+          <div className="text-3xl mb-2">{cancelDialog?.ok ? '✅' : '⏳'}</div>
+          <div className="text-sm font-semibold">{cancelDialog?.msg}</div>
+          {!cancelDialog?.ok && (
+            <div className="text-[11px] text-text-muted mt-2">撤单通过 operator 私钥执行 cancel_order transition（约 1-3 秒）</div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -192,7 +232,6 @@ const AI_LOGS: { cells: (string | JSX.Element)[] }[] = [
   { cells: ['14:32:15', 'BTC/USDT', <span className="text-orange text-[11px]">风险率超阈值</span>, <span className="font-bold text-down">92.4%</span>, '67,820.00', <span className="text-down">平多</span>, '0.1800', '0.8200 BTC', <Tag variant="purple">自动减仓</Tag>, <Tag variant="green">已执行</Tag>] },
   { cells: ['14:05:08', 'ETH/USDT', <span className="text-orange text-[11px]">接近强平线</span>, <span className="font-bold text-orange">88.1%</span>, '3,465.50', <span className="text-up">平空</span>, '1.2000', '2.0000 ETH', <Tag variant="purple">对冲减仓</Tag>, <Tag variant="green">已执行</Tag>] },
   { cells: ['13:40:22', 'BTC/USDT', <span className="text-orange text-[11px]">波动率激增</span>, <span className="font-bold text-orange">85.7%</span>, '68,910.00', <span className="text-down">平多</span>, '0.0500', '0.9500 BTC', <Tag variant="orange">预警减仓</Tag>, <Tag variant="green">已执行</Tag>] },
-  { cells: ['11:22:40', 'SOL/USDT', <span className="text-orange text-[11px]">保证金不足</span>, <span className="font-bold text-down">91.0%</span>, '142.30', <span className="text-down">平多</span>, '12.0000', '88.0000 SOL', <Tag variant="purple">自动减仓</Tag>, <Tag variant="green">已执行</Tag>] },
   { cells: ['09:15:03', 'BTC/USDT', <span className="text-orange text-[11px]">资金费率异常</span>, <span className="font-bold">76.3%</span>, '67,540.00', <span className="text-text-muted">—</span>, '—', '1.0000 BTC', <Tag variant="blue">仅预警</Tag>, <Tag variant="orange">已通知</Tag>] },
 ]
 

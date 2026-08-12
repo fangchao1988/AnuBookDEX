@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { genDepth, genTrades, LAST_PRICE, type TradeRow as MockTradeRow } from '../../mock/market'
-import { useMarket, type DepthRow } from '../../stores/marketStore'
+import { useMarket, loadTradeHistory, type DepthRow } from '../../stores/marketStore'
 import { useMarketChannels } from '../../hooks/useMarketChannels'
 import { formatNumber, timeStr } from '../../lib/format'
 import { toChannelSymbol } from '../../lib/symbol'
@@ -18,6 +18,11 @@ export function OrderBook({ symbol }: { symbol: string }) {
   useMarketChannels(symbol)
   const [tab, setTab] = useState<'depth' | 'trades'>('depth')
   const setPrice = useTrade((s) => s.setPrice)
+
+  // 刷新页面后回放最近成交历史（WS 实时继续累积）
+  useEffect(() => {
+    void loadTradeHistory(toChannelSymbol(symbol))
+  }, [symbol])
 
   // store key 为频道名（BTC_USDT），与展示名（BTC/USDT）区分
   const channelSymbol = toChannelSymbol(symbol)
@@ -106,16 +111,16 @@ export function OrderBook({ symbol }: { symbol: string }) {
           <div className="px-2.5 py-2 flex gap-2 border-b border-line items-center shrink-0">
             <span className="text-[11px] text-text-muted flex-1">价格 (USDT)</span>
             <span className="text-[11px] text-text-muted flex-[0_0_72px] text-right">数量</span>
-            <span className="text-[11px] text-text-muted flex-[0_0_56px] text-right">时间</span>
+            <span className="text-[11px] text-text-muted flex-[0_0_72px] text-right">时间</span>
           </div>
           <div className="flex-1 overflow-y-auto text-xs">
             {trades.map((t, i) => (
-              <div key={i} className="flex px-2.5 py-px cursor-pointer hover:bg-bg-hover">
+              <div key={i} className="flex gap-2 px-2.5 py-px cursor-pointer hover:bg-bg-hover">
                 <span className={`flex-1 font-semibold ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
                   {formatNumber(t.price, 2)}
                 </span>
                 <span className="flex-[0_0_72px] text-right">{t.qty}</span>
-                <span className="flex-[0_0_56px] text-right text-text-muted">{t.timeText}</span>
+                <span className="flex-[0_0_72px] text-right text-text-muted">{t.timeText}</span>
               </div>
             ))}
           </div>
@@ -140,7 +145,7 @@ function DepthRow({
 }) {
   return (
     <div
-      className={`relative flex px-2.5 py-px text-xs cursor-pointer hover:bg-bg-hover ${side === 'ask' ? 'ask' : 'bid'}`}
+      className={`relative flex gap-2 px-2.5 py-px text-xs cursor-pointer hover:bg-bg-hover ${side === 'ask' ? 'ask' : 'bid'}`}
       onClick={onClick}
     >
       <span

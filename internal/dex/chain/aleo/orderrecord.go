@@ -14,21 +14,30 @@ import (
 
 // 订单状态（P3 委托列表真实数据）
 const (
-	OrderStatusWaiting = "waiting" // 等待中（已提交 / 挂单）
-	OrderStatusPartial = "partial" // 部分成交
-	OrderStatusFilled  = "filled"  // 已完成
+	OrderStatusWaiting  = "waiting"  // 等待中（已提交 / 挂单）
+	OrderStatusPartial  = "partial"  // 部分成交
+	OrderStatusFilled   = "filled"   // 已完成
+	OrderStatusCanceled = "canceled" // 已撤销（链上 cancel_order）
+)
+
+// 成交结算状态（链上 settle）
+const (
+	SettlePending = "pending" // 待链上结算
+	SettleSettled = "settled" // 已链上结算
+	SettleFailed  = "failed"  // 链上结算失败
 )
 
 // TradeRecord 成交明细（P3 成交记录真实数据）：撮合回执时按 maker 成交逐笔记录。
 type TradeRecord struct {
-	OrderId int64  `json:"order_id"` // maker 订单
-	Symbol  string `json:"symbol"`
-	Side    string `json:"side"`   // maker 方向
-	Price   string `json:"price"`
-	Amount  string `json:"amount"`
-	Trader  string `json:"trader"` // maker 交易者
-	Taker   string `json:"taker"`  // taker 交易者
-	Ts      int64  `json:"ts"`
+	OrderId     int64  `json:"order_id"` // maker 订单
+	Symbol      string `json:"symbol"`
+	Side        string `json:"side"`   // maker 方向
+	Price       string `json:"price"`
+	Amount      string `json:"amount"`
+	Trader      string `json:"trader"` // maker 交易者
+	Taker       string `json:"taker"`  // taker 交易者
+	Ts          int64  `json:"ts"`
+	SettleStatus string `json:"settle_status"` // 链上结算状态（pending/settled/failed）
 }
 
 // OrderRecord 内存订单状态记录：提交时落库（等待中），撮合回执时更新成交量与状态。
@@ -104,14 +113,15 @@ func (p *OrderPool) RecordMatch(mrs []*match.MatchResult) {
 				price = item.Price.String()
 			}
 			p.trades = append(p.trades, &TradeRecord{
-				OrderId: item.OrderId,
-				Symbol:  mr.Symbol,
-				Side:    makerSide,
-				Price:   price,
-				Amount:  item.FilledAmount.String(),
-				Trader:  makerTrader,
-				Taker:   rec.Trader,
-				Ts:      mr.Ts,
+				OrderId:      item.OrderId,
+				Symbol:       mr.Symbol,
+				Side:         makerSide,
+				Price:        price,
+				Amount:       item.FilledAmount.String(),
+				Trader:       makerTrader,
+				Taker:        rec.Trader,
+				Ts:           mr.Ts,
+				SettleStatus: SettlePending,
 			})
 		}
 		rec.Filled = total.String()
@@ -120,8 +130,42 @@ func (p *OrderPool) RecordMatch(mrs []*match.MatchResult) {
 			rec.Status = OrderStatusFilled
 		case "partial-filled":
 			rec.Status = OrderStatusPartial
+		case "canceled", "partial-canceled":
+			rec.Status = OrderStatusCanceled
 		default:
 			rec.Status = OrderStatusWaiting
+		}
+
+		// maker 订单状态同步更新（撮合中 maker 被成交，前端委托列表需反映）
+		for _, item := range mr.Items {
+			if item.Role != "maker" || item.OrderId == 0 {
+				continue
+			}
+			makerRec, ok := p.records[item.OrderId]
+			if !ok {
+				continue
+			}
+			if item.FilledAmount != nil && !item.FilledAmount.IsZero() {
+				// 累计成交（按撮合回执全量覆盖：mr 为当前撮合结果）
+				makerRec.Filled = item.FilledAmount.String()
+			}
+			switch item.State {
+			case "filled":
+				makerRec.Status = OrderStatusFilled
+			case "partial-filled":
+				makerRec.Status = OrderStatusPartial
+			}
+		}
+	}
+}
+
+// UpdateTradeSettleStatus 更新成交的链上结算状态（settlement 回执时调用）
+func (p *OrderPool) UpdateTradeSettleStatus(orderId int64, status string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, t := range p.trades {
+		if t.OrderId == orderId && t.SettleStatus != status {
+			t.SettleStatus = status
 		}
 	}
 }

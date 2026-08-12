@@ -57,7 +57,7 @@ function AiModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       <AiRiskBound enabled={autoReduce} />
       <SettingRow
         title={<b>AI 智能路由</b>}
-        desc={<>AleoBook + RocketSwap 最优路径</>}
+        desc={<>AleoBook + Arcane Finance 最优路径</>}
         control={<Toggle checked={routeOn} onChange={setRouteOn} />}
       />
       <SettingRow

@@ -55,6 +55,16 @@ export class LeoWalletAdapter implements AleoWallet {
     return { aleo: '--', usdt: '--', base: '--' }
   }
 
+  async mintToken(_tokenId: number, _amount: number): Promise<void> {
+    // Leo Wallet 旧版：mint 支持待实测（Shield 已实现）
+    throw new Error('Leo Wallet mint 未实现，请使用 Shield 钱包')
+  }
+
+  async deployProgram(): Promise<string> {
+    // Leo Wallet 旧版：部署支持待实测（Shield 已实现）
+    throw new Error('Leo Wallet 部署未实现，请使用 Shield 钱包')
+  }
+
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
     if (!this.wallet?.requestTransaction) throw new Error('Leo Wallet 未暴露 requestTransaction()')
     // 1) 构建 place_order transition：fund Token record（requestRecords）+ 9 参数
@@ -111,6 +121,15 @@ export class DevWallet implements AleoWallet {
       txId: `dev-tx-${params.orderId}`,
       ciphertext: 'ciphertext1dev-placeholder',
     }
+  }
+
+  async mintToken(_tokenId: number, _amount: number): Promise<void> {
+    // Dev 模式模拟铸币（无链上操作）
+  }
+
+  async deployProgram(): Promise<string> {
+    // Dev 模式模拟部署
+    return 'dev-deploy-placeholder'
   }
 }
 

@@ -1,31 +1,58 @@
-version: "3.8"
+# AnuBookDEX (Aleo DEX) Docker Compose 部署
+#
+# 服务：
+#   engine - Aleo 撮合引擎（链上结算/撤单依赖 leo CLI，镜像内已含）
+#   web    - 前端 Nginx（SPA + /ws /api /order 反向代理到 engine）
+#
+# 快速开始：
+#   1. cp .env.aleo.example .env.aleo   # 填入 ALEO_PRIVATE_KEY / ALEO_VIEW_KEY
+#   2. cp conf/dev-aleo.yaml conf/config.yaml  # 或准备生产配置
+#   3. docker compose up -d --build
+#
+# 访问：http://localhost:8080
 
 services:
   engine:
+    # 本地构建（默认）：build 存在时 compose 优先本地构建
+    # 镜像仓库模式：删除 build 段，改为 docker compose pull（CI 推送 ghcr.io/{repo}/engine）
     build:
       context: .
-      dockerfile: Dockerfile
-    image: anubookdex-engine:latest
+      dockerfile: deploy/engine/Dockerfile
+    image: ghcr.io/alecobookdex/anubookdex/engine:latest
     container_name: anubookdex-engine
-    ports:
-      - "9000:9000"
+    env_file: .env.aleo
     environment:
       - CONFIG_FILE=/app/conf/config.yaml
-      - START_OK=/app/.start_ok
     volumes:
-      - ./conf:/app/conf:ro
-      - engine_data:/app/data
-      - engine_logs:/app/logs
-      - engine_sp:/app/sp
+      # 测试配置模板（联调可切换 ./conf/dev-aleo.yaml）
+      - ./conf/test-aleo.yaml:/app/conf/config.yaml:ro
+      # 数据持久化（rocksdb 订单簿快照 + 行情快照 + 日志）
+      - engine-data:/app/data
+      - engine-logs:/app/logs
+      - engine-sp:/app/sp-aleo-p3
+    ports:
+      # 直连引擎（可选，前端已通过 Nginx 代理）
+      - "9000:9000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
-    networks:
-      - anubookdex
+
+  web:
+    build: ./web
+    image: ghcr.io/alecobookdex/anubookdex/web:latest
+    container_name: anubookdex-web
+    ports:
+      - "8080:80"
+    depends_on:
+      engine:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
-  engine_data:
-  engine_logs:
-  engine_sp:
-
-networks:
-  anubookdex:
-    driver: bridge
+  engine-data:
+  engine-logs:
+  engine-sp:

@@ -1,9 +1,11 @@
 package aleo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -26,10 +28,20 @@ type RESTClient struct {
 }
 
 // NewRESTClient 创建 snarkOS REST 客户端。
+// 强制 IPv4：api.explorer.provable.com 的 DNS 可能解析到 IPv6（Cloudflare 2606:4700::），
+// 无 IPv6 路由的环境会 dial 失败（curl 会 fallback IPv4，Go 默认 Happy Eyeballs 在此场景不生效）
 func NewRESTClient(base string) *RESTClient {
+	dialer := &net.Dialer{Timeout: 15 * time.Second}
 	return &RESTClient{
-		base:       strings.TrimRight(base, "/"),
-		httpClient: &http.Client{Timeout: 15 * time.Second},
+		base: strings.TrimRight(base, "/"),
+		httpClient: &http.Client{
+			Timeout: 15 * time.Second,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _ string, addr string) (net.Conn, error) {
+					return dialer.DialContext(ctx, "tcp4", addr)
+				},
+			},
+		},
 	}
 }
 

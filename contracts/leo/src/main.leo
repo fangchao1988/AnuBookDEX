@@ -4,7 +4,7 @@
 // record 声明在 program 块内（struct 在块外）；`let` 默认可变 + 类型推断。
 // Leo 4.4 finalization：`return final { ... };` 内联。
 // MVP：settle 全额成交；资金锁定：买单锁 quote 金额（price*amount）、卖单锁 base 数量。
-// 程序名 anubook_dex_p2（Phase 1 公开 mapping 版 anubook_dex 已部署且 @noupgrade 不可覆盖）。
+// 程序名 anubook_dex_p2（与链上一致，leo execute settle 用）（Phase 1 公开 mapping 版 anubook_dex 已部署且 @noupgrade 不可覆盖）。
 
 program anubook_dex_p2.aleo {
 
@@ -32,11 +32,8 @@ program anubook_dex_p2.aleo {
     constructor() {}
 
     // 演示用：铸造测试 Token（生产环境由资产发行方/桥控制铸造权限）
-    fn mint(amount: u64, token_id: u32) -> (Token, Final) {
-        return (
-            Token { owner: std::ctx::signer(), amount: amount, token_id: token_id },
-            final {},
-        );
+    fn mint(amount: u64, token_id: u32) -> Token {
+        return Token { owner: std::ctx::signer(), amount: amount, token_id: token_id };
     }
 
     // 下单：用户锁仓 Token，铸出归 operator 的 Order record
@@ -50,26 +47,23 @@ program anubook_dex_p2.aleo {
         quote_token: u32,
         deadline: u32,
         operator: address,
-    ) -> (Order, Final) {
+    ) -> Order {
         // 锁仓匹配：买单锁 quote 金额 price*amount，卖单锁 base 数量 amount
         assert_eq(
             (side == 0u8 && fund.token_id == quote_token && fund.amount == price * amount)
                 || (side == 1u8 && fund.token_id == base_token && fund.amount == amount),
             true
         );
-        return (
-            Order {
-                owner: operator,
-                order_id: order_id,
-                side: side,
-                price: price,
-                amount: amount,
-                base_token: base_token,
-                quote_token: quote_token,
-                deadline: deadline,
-            },
-            final {},
-        );
+        return Order {
+            owner: operator,
+            order_id: order_id,
+            side: side,
+            price: price,
+            amount: amount,
+            base_token: base_token,
+            quote_token: quote_token,
+            deadline: deadline,
+        };
     }
 
     // 撮合结算：消费 maker（买单）+ taker（卖单），产出双方 Token（含找零）

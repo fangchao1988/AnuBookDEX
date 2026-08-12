@@ -22,6 +22,12 @@ conf/preconf
 # Example config (keep)
 !conf/config.example.yaml
 
+# 部署密钥（docker compose env_file）
+.env.aleo
+
+# Leo 项目 .env（testnet 私钥等，勿提交）
+contracts/leo/.env
+
 # Logs
 logs/
 *.log

@@ -6,7 +6,8 @@ import { toDecimal } from '../../lib/decimal'
 import { formatNumber } from '../../lib/format'
 import { toChannelSymbol } from '../../lib/symbol'
 import { pairTokens } from '../../lib/tokens'
-import { nextOrderId, submitAleoOrder } from '../../lib/api/orders'
+import { nextOrderId, submitAleoOrder, submitPrivacyOrder } from '../../lib/api/orders'
+import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../../stores/wallet'
 
 // 提交状态：'idle' | 'submitting' | 'ok' | 'error'
@@ -31,10 +32,10 @@ const PRIVACY_MODES: Record<
     ],
   },
   privacy: {
-    label: '隐私下单',
+    label: '隐私',
     desc: (
       <>
-        <b className="text-text-secondary">隐私下单（加密）：</b>订单以 Note 承诺加密入簿，对手方仅见承诺不见明文。成交稍慢（需解密匹配），防 MEV 与前置交易。
+        <b className="text-text-secondary">隐私（加密）：</b>订单以 Note 承诺加密入簿，对手方仅见承诺不见明文。成交稍慢（需解密匹配），防 MEV 与前置交易。
       </>
     ),
     metrics: [
@@ -88,17 +89,26 @@ export function OrderForm() {
   } = useSettings()
   const { price, amount, stopPrice, tp, sl, setPrice, setAmount, setStopPrice, setTp, setSl } = useTrade()
   const openModal = useUi((s) => s.openModal)
+  const navigate = useNavigate()
   const wallet = useWallet((s) => s.wallet)
   const walletAddress = useWallet((s) => s.address)
   const [submitState, setSubmitState] = useState<SubmitState>('idle')
   const [submitError, setSubmitError] = useState('')
   const timerRef = useRef<number | null>(null)
 
-  // Aleo 链下订单通道（POST /order）：
-  // 1) 钱包已连接 -> place_order（锁仓 Token -> transition -> txId）-> 引擎代理换 ciphertext
-  // 2) 未连接/DevWallet -> 占位 ciphertext（联调降级；生产必须走钱包）
+  // 三种下单模式：
+  // - 标准：钱包 place_order（链上锁仓）-> 引擎换 ciphertext -> POST /order（明文）
+  // - 隐私：钱包 place_order（链上加密 record）-> POST /order/privacy（仅 tx_id，不发明文；
+  //         引擎用 operator view key 解密 Order record 后撮合 —— Aleo 原生隐私）
+  // - 暗池：跳转暗池页（暗池撮合暂未实现）
   const submit = async () => {
     if (submitState === 'submitting') return
+
+    if (privacyMode === 'darkpool') {
+      navigate('/darkpool')
+      return
+    }
+
     const channelSymbol = toChannelSymbol(pair)
     const tokens = pairTokens(channelSymbol)
     const clean = (v: string) => v.replace(/,/g, '').trim()
@@ -110,13 +120,15 @@ export function OrderForm() {
       return
     }
     const orderId = nextOrderId()
+    const trader = walletAddress ?? localStorage.getItem('aleo_address') ?? 'aleo1dev-placeholder'
     setSubmitState('submitting')
     setSubmitError('')
 
-    let ciphertext: string
+    let placedTxId = ''
+    let ciphertext: string | undefined
     try {
       if (wallet.isConnected() && wallet.kind !== 'dev') {
-        // 真钱包（Shield/Leo）：place_order -> txId -> 引擎代理换 ciphertext；
+        // 链上锁仓（p2 完整版有 place_order）：钱包执行 place_order -> txId -> 引擎代理换 ciphertext；
         // operator 地址由适配器从引擎 /api/v1/operator 获取（chain.aleo.address 配置）
         const placed = await wallet.placeOrder({
           orderId,
@@ -128,9 +140,11 @@ export function OrderForm() {
           deadline: Math.floor(Date.now() / 1000) + 3600,
           operator: '',
         })
+        placedTxId = placed.txId
         ciphertext = placed.ciphertext
       } else {
-        // DevWallet / 未连接：联调占位（生产构建必须钱包，见 import.meta.env.DEV 校验）
+        // DevWallet / 未连接：联调占位（隐私模式必须真实钱包 —— 链上解密）
+        if (privacyMode === 'privacy') throw new Error('隐私下单需要真实钱包（链上加密+解密撮合）')
         ciphertext = 'ciphertext1dev-ui-placeholder'
         if (!import.meta.env.DEV && wallet.kind !== 'dev') {
           throw new Error('请先连接钱包')
@@ -142,18 +156,21 @@ export function OrderForm() {
       return
     }
 
-    const res = await submitAleoOrder({
-      order_id: orderId,
-      side: direction === 'long' ? 0 : 1,
-      price: priceVal,
-      amount: amountVal,
-      symbol: channelSymbol,
-      base_token: tokens.base,
-      quote_token: tokens.quote,
-      deadline: Math.floor(Date.now() / 1000) + 3600,
-      trader: walletAddress ?? localStorage.getItem('aleo_address') ?? 'aleo1dev-placeholder',
-      ciphertext,
-    })
+    const res =
+      privacyMode === 'privacy'
+        ? await submitPrivacyOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
+        : await submitAleoOrder({
+            order_id: orderId,
+            side: direction === 'long' ? 0 : 1,
+            price: priceVal,
+            amount: amountVal,
+            symbol: channelSymbol,
+            base_token: tokens.base,
+            quote_token: tokens.quote,
+            deadline: Math.floor(Date.now() / 1000) + 3600,
+            trader,
+            ciphertext: ciphertext ?? '',
+          })
     setSubmitState(res.ok ? 'ok' : 'error')
     if (!res.ok) setSubmitError(res.error ?? '提交失败')
     if (timerRef.current) window.clearTimeout(timerRef.current)
@@ -162,7 +179,8 @@ export function OrderForm() {
 
   const base = pair.split('/')[0]
   const isPerp = tradingMode === 'perp'
-  const balance = isPerp ? '15,133.45 USDT' : '128,456.78 USDT'
+  //const balance = isPerp ? '15,133.45 USDT' : '128,456.78 USDT'
+  const balances = useWallet((s) => s.balances)
   // 强平价估算：liq = entry * (1 - 1/lev)（对齐原型 updateLiquidationEstimate，decimal 精确计算）
   const liqPrice = useMemo(() => {
     const entry = toDecimal(68245)
@@ -178,13 +196,13 @@ export function OrderForm() {
     <div className="bg-bg-secondary border-r border-line p-3 border-b border-line">
       <div className="flex justify-between mb-2.5 text-xs">
         <span className="text-text-muted">{isPerp ? '账户权益' : '钱包余额'}</span>
-        <span className="text-text-primary font-semibold">{balance}</span>
+        <span className="text-text-primary font-semibold">{balances?.usdt ?? '0'} USDT</span>
       </div>
 
       {/* 隐私模式选择器 */}
       <div className="mb-2.5 p-2 bg-bg-tertiary border border-line rounded-md">
         <div className="flex items-center gap-1.5 text-[11px] text-cyan font-semibold mb-1.5">
-          🛡 隐私模式 <span className="text-text-muted font-normal">· 隐私优先</span>
+          🛡 下单模式 <span className="text-text-muted font-normal">· 隐私优先</span>
         </div>
         <div className="flex gap-1 mb-1.5">
           {(Object.keys(PRIVACY_MODES) as PrivacyMode[]).map((k) => (

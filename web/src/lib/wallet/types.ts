@@ -33,6 +33,10 @@ export interface AleoWallet {
   getBalances(baseSymbol: string): Promise<WalletBalances>
   // place_order：锁仓 Token record -> transition -> txId -> Order record ciphertext
   placeOrder(params: PlaceOrderParams): Promise<PlacedOrder>
+  // 铸测试币（anubook_dex_p2.aleo mint；Token 归执行者，dev 模拟）
+  mintToken(tokenId: number, amount: number): Promise<void>
+  // 部署合约（Shield executeDeployment，用户 ALEO 付部署费；dev 模拟返回占位 txId）
+  deployProgram(): Promise<string>
 }
 
 // 引擎 operator 地址（Order record owner；生产由链配置提供，本地联调占位）
