@@ -38,7 +38,7 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
 
   useEffect(() => {
     void loadOrders()
-    const timer = window.setInterval(loadOrders, 5000)
+    const timer = window.setInterval(loadOrders, 2000)
     return () => window.clearInterval(timer)
   }, [loadOrders])
 

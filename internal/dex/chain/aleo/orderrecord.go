@@ -22,9 +22,10 @@ const (
 
 // 成交结算状态（链上 settle）
 const (
-	SettlePending = "pending" // 待链上结算
-	SettleSettled = "settled" // 已链上结算
-	SettleFailed  = "failed"  // 链上结算失败
+	SettlePending  = "pending"  // 待链上结算
+	SettleSettling = "settling" // 链上结算执行中（leo execute 已启动，前端展示结算中）
+	SettleSettled  = "settled"  // 已链上结算
+	SettleFailed   = "failed"   // 链上结算失败
 )
 
 // TradeRecord 成交明细（P3 成交记录真实数据）：撮合回执时按 maker 成交逐笔记录。

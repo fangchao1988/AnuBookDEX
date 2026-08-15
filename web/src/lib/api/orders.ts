@@ -76,6 +76,7 @@ export const STATUS_LABEL: Record<OrderRecord['status'], { text: string; cls: 'o
 // 结算状态显示（链上 settle）
 export const SETTLE_LABEL: Record<string, { text: string; cls: 'green' | 'orange' | 'red' }> = {
   settled: { text: '已结算', cls: 'green' },
+  settling: { text: '结算中', cls: 'orange' },
   pending: { text: '待结算', cls: 'orange' },
   failed: { text: '结算失败', cls: 'red' },
 }

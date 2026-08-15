@@ -14,14 +14,14 @@ import (
 )
 
 // StartEngine 启动 DEX 引擎：按交易对初始化行情(l2quote)/快照/订单订阅/撮合循环，
-// 并把撮合结果批量提交到链上结算。
+// 并把撮合结果提交到链上结算。
 //
 // 链后端由 src（订单源）与 sink（结算目标）注入，撮合核心链无关--
 // cmd/engine/{anubis,aleo}/main.go 各自注入对应链后端。
 //
-// batchSize 控制撮合结果累积到多少条后触发一次 sink.SubmitBatch，
-// 由各链入口按 chain.<chain>.settlement-batch-size 传入。
-func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb.SnapshotStore, hub *ws.Hub, batchSize int) {
+// 撮合结果每笔立即提交 sink.SubmitBatch（不攒批）：链上 settle 单次耗时
+// 数十秒，早开始早回执，前端结算状态尽快可见。
+func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb.SnapshotStore, hub *ws.Hub) {
 	match.Init()
 
 	// 行情线程（WS 模式）
@@ -72,9 +72,6 @@ func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb
 
 		match.OrderBookMap[symbol] = book
 
-		// per-symbol 待结算累积
-		var pendingSettlements []*match.MatchResult
-
 		go StartMatcher(book, orderCh,
 			func(cloneBook *match.OrderBook) {
 				// 与 LoadLatest 对称：chain.restore-snapshot=false（默认）时不落快照
@@ -90,17 +87,13 @@ func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb
 			},
 			func(mrJSON []byte, mr *match.MatchResult) {
 				mrChan <- mrJSON
-				pendingSettlements = append(pendingSettlements, mr)
-				if len(pendingSettlements) >= batchSize {
-					sink.SubmitBatch(book.Symbol, pendingSettlements)
-					pendingSettlements = nil
-				}
+				// 撮合结果立即进入结算：不攒批（settlement-batch-size 需 100 条才触发）
+				// 也不等 10s 上报周期 flush——链上 settle 单次 leo execute 耗时数十秒，
+				// 早开始早回执，前端结算状态尽快可见。
+				sink.SubmitBatch(book.Symbol, []*match.MatchResult{mr})
 			},
 			func() {
-				if len(pendingSettlements) > 0 {
-					sink.SubmitBatch(book.Symbol, pendingSettlements)
-					pendingSettlements = nil
-				}
+				// 上报周期回调：结算已即时触发，此处无需 flush
 			},
 		)
 	}

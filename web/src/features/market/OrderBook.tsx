@@ -40,6 +40,9 @@ export function OrderBook({ symbol }: { symbol: string }) {
 
   // 无实时数据时用 mock 兜底（保持 UI 不空）；mock DepthRow -> store DepthRow 形状对齐。
   // asks 与实时数据一致：从高到低（mock 生成器为低到高，反转对齐）
+  // 注意：p4 真实币对（ALEO/USDCX）不兜底 mock——引擎空盘/断线时显示"暂无挂单"，
+  // 假档位会误导真实交易
+  const isP4 = pairMode(channelSymbol) === 'p4-real'
   const mockBids = useMemo(
     () => genDepth(LAST_PRICE, 14, false).map((r) => ({ price: r.price, qty: r.amt, total: r.total, pct: r.pct })),
     [],
@@ -54,13 +57,16 @@ export function OrderBook({ symbol }: { symbol: string }) {
   const mockTrades = useMemo(() => genTrades(LAST_PRICE, 25), [])
   const mockLast = formatNumber(LAST_PRICE, 2)
 
-  const bids = hasLive ? liveBids : mockBids
-  const asks = hasLive ? liveAsks : mockAsks
+  const bids = hasLive ? liveBids : isP4 ? [] : mockBids
+  const asks = hasLive ? liveAsks : isP4 ? [] : mockAsks
   // 成交：实时数据时间戳转文本；mock 数据自带文本
   const trades: RenderTrade[] = hasLive
     ? liveTrades.map((t) => ({ price: t.price, qty: t.qty, timeText: timeStr(t.time), side: t.side }))
-    : mockTrades.map((t: MockTradeRow) => ({ price: t.price, qty: t.amt, timeText: t.time, side: t.side }))
-  const lastPrice = (liveLast ?? mockLast).replace(/,/g, '')
+    : isP4
+      ? []
+      : mockTrades.map((t: MockTradeRow) => ({ price: t.price, qty: t.amt, timeText: t.time, side: t.side }))
+  const lastPriceRaw = hasLive ? (liveLast ?? '') : isP4 ? '' : mockLast
+  const lastPrice = lastPriceRaw ? formatNumber(lastPriceRaw.replace(/,/g, ''), priceDecimals) : '--'
 
   const clickRow = (price: string) => setPrice(formatNumber(price, priceDecimals))
 
@@ -94,15 +100,21 @@ export function OrderBook({ symbol }: { symbol: string }) {
             <span className="text-[11px] text-text-muted flex-[0_0_72px] text-right">总额</span>
           </div>
           <div className="flex-1 overflow-y-auto">
+            {asks.length === 0 && (
+              <div className="h-full flex items-center justify-center text-[11px] text-text-muted">暂无挂单</div>
+            )}
             {asks.map((r) => (
               <DepthRow key={r.price} row={r} side="ask" decimals={priceDecimals} onClick={() => clickRow(r.price)} />
             ))}
           </div>
           <div className="py-1.5 px-2.5 text-xs font-semibold text-center border-y border-line bg-bg-tertiary flex items-center justify-center gap-1.5 text-text-primary">
-            {formatNumber(lastPrice, priceDecimals)}
+            {lastPrice}
             <span className="text-[9px] text-cyan border border-cyan px-0.5 rounded-sm font-normal">ZK</span>
           </div>
           <div className="flex-1 overflow-y-auto">
+            {bids.length === 0 && (
+              <div className="h-full flex items-center justify-center text-[11px] text-text-muted">暂无挂单</div>
+            )}
             {bids.map((r) => (
               <DepthRow key={r.price} row={r} side="bid" decimals={priceDecimals} onClick={() => clickRow(r.price)} />
             ))}
@@ -131,7 +143,7 @@ export function OrderBook({ symbol }: { symbol: string }) {
             ))}
           </div>
           <div className="py-1 px-2.5 text-[10px] text-text-muted border-t border-line flex justify-between shrink-0">
-            <span>合计 {hasLive ? trades.length : 2456} 笔</span>
+            <span>合计 {hasLive || isP4 ? trades.length : 2456} 笔</span>
             <span>ZK 加密存证</span>
           </div>
         </>

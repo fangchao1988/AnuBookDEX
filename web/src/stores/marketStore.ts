@@ -177,9 +177,10 @@ export async function loadTradeHistory(symbol: string) {
 function applyDepth(symbol: string, p: WsPayload) {
   const bids = (p.bids as [string, string][]) ?? []
   const asks = (p.asks as [string, string][]) ?? []
-  if (bids.length === 0 && asks.length === 0) return
   useMarket.setState((s) => {
     // 后端广播为全量快照帧（QuoteDepths.bids/asks），整体替换，顺序由后端保证。
+    // 空盘也广播空数组（后端 bids/asks 无 omitempty），此处整体清空——
+    // 否则引擎重启清盘后前端残留旧深度，切币对/重连后显示已不存在的挂单。
     // p4 真实币对（ALEO/USDCX）引擎发送 6 位最小单位，入库前换算为人类单位
     const next = { bids: new Map<string, string>(), asks: new Map<string, string>() }
     for (const [price, qty] of bids) next.bids.set(scalePairValue(symbol, price), scalePairValue(symbol, qty))

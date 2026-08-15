@@ -30,6 +30,7 @@ type Settlement struct {
 	pool        *OrderPool // 订单池：按 OrderId 查 record ciphertext
 	seq         uint64
 	stopCh      chan struct{} // 重结算循环停止信号
+	retrying    atomic.Bool   // 重结算循环防重叠（leo execute 单次耗时数十秒，周期仅 10s）
 }
 
 // NewSettlement 创建 Aleo 结算适配器。
@@ -93,6 +94,9 @@ func (s *Settlement) SubmitBatch(symbol string, mrs []*match.MatchResult) (strin
 			if item.FilledAmount != nil {
 				amount = uint64(item.FilledAmount.IntPart())
 			}
+			// 结算开始即回执 settling（前端显示"结算中"，不再一直 pending；
+			// leo execute 单次耗时数十秒，状态可见性对用户体感重要）
+			s.pool.UpdateTradeSettleStatus(item.OrderId, SettleSettling)
 			if err := s.executeSettle(buyPO.Ciphertext, sellPO.Ciphertext, sellPO.OpFund, buyPO.OpFund, buyPO.Creds, price, amount); err != nil {
 				common.Error("aleo settlement: settle failed",
 					"maker", item.OrderId, "taker", takerID, "err", err)
@@ -115,9 +119,9 @@ func (s *Settlement) SubmitBatch(symbol string, mrs []*match.MatchResult) (strin
 // 注意：私钥必须显式传参（--private-key）——leo 读 .env 私钥会触发 InvalidCharacter bug；
 // 且 .env 的 PRIVATE_KEY 引号问题会导致解析失败，显式传参已实测可用
 //
-// 内置 3 次重试：leo 构建证明前需从 explorer API 拉 statePaths，该端点偶发网络
-// 失败（"Failed to fetch from .../statePaths"），此时交易尚未广播、record 未消费，
-// 重试安全。间隔 2s/4s。
+// 不内置重试：leo 构建 ZK 证明本身耗时数十秒，失败后串行重试会让前端成交记录的
+// 结算状态长时间停在 pending。失败立即返回（回执 failed），由 10s 后台重结算循环
+// 统一重试（失败交易未广播、record 未消费，重试安全）。
 func (s *Settlement) executeSettle(makerOrderCT, takerOrderCT, opAloe, opUsdcx, creds string, price, amount uint64) error {
 	// 私钥兜底：config chain.aleo.private-key -> ALEO_PRIVATE_KEY（viper BindEnv 对嵌套 key 不可靠）
 	priv := s.privateKey
@@ -143,40 +147,32 @@ func (s *Settlement) executeSettle(makerOrderCT, takerOrderCT, opAloe, opUsdcx, 
 	if priv != "" {
 		args = append(args, "--private-key", priv)
 	}
-	var lastErr error
-	for attempt := 0; attempt < 3; attempt++ {
-		cmd := exec.Command("leo", args...)
-		cmd.Dir = s.workingDir
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			common.Debug("aleo settlement: leo execute settle ok",
-				"price", price, "amount", amount,
-				"out", strings.TrimSpace(string(out)))
-			return nil
-		}
-		outStr := strings.TrimSpace(string(out))
-		// 幂等成功：广播已上链但 leo CLI 因状态查询失败返回非零码，重试时节点报
-		// "input ID ... already exists in the ledger"——说明该笔结算已成功，视为 settled
-		if strings.Contains(outStr, "already exists") {
-			common.Info("aleo settlement: settle already on-chain (idempotent)",
-				"price", price, "amount", amount)
-			return nil
-		}
-		lastErr = fmt.Errorf("leo execute settle: %w; out: %s", err, outStr)
-		if attempt < 2 {
-			common.Warn("aleo settlement: leo execute failed, will retry",
-				"attempt", attempt+1, "price", price, "amount", amount)
-			time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
-		}
+	cmd := exec.Command("leo", args...)
+	cmd.Dir = s.workingDir
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		common.Debug("aleo settlement: leo execute settle ok",
+			"price", price, "amount", amount,
+			"out", strings.TrimSpace(string(out)))
+		return nil
 	}
-	return lastErr
+	outStr := strings.TrimSpace(string(out))
+	// 幂等成功：广播已上链但 leo CLI 因状态查询失败返回非零码，重试时节点报
+	// "input ID ... already exists in the ledger"——说明该笔结算已成功，视为 settled
+	if strings.Contains(outStr, "already exists") {
+		common.Info("aleo settlement: settle already on-chain (idempotent)",
+			"price", price, "amount", amount)
+		return nil
+	}
+	return fmt.Errorf("leo execute settle: %w; out: %s", err, outStr)
 }
 
 // StartRetryLoop 启动后台重结算循环：定期扫描结算失败的成交重新执行 settle。
 // 失败的结算交易未广播、record 未消费，重试安全；成功后前端结算状态回执为 settled。
+// 10s 周期：executeSettle 已不内置重试，失败单由本循环快速兜底，前端能尽快看到 settled。
 func (s *Settlement) StartRetryLoop() {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {
@@ -191,6 +187,11 @@ func (s *Settlement) StartRetryLoop() {
 
 // retryFailedSettlements 扫描失败成交并重试链上结算（买卖侧输入与 SubmitBatch 同规则）。
 func (s *Settlement) retryFailedSettlements() {
+	// 防重叠：上一轮还没跑完（leo execute 慢，10s 周期会追上）时跳过本轮
+	if !s.retrying.CompareAndSwap(false, true) {
+		return
+	}
+	defer s.retrying.Store(false)
 	for _, t := range s.pool.ListFailedTrades() {
 		makerPO, ok1 := s.pool.GetOrder(t.OrderId)
 		takerPO, ok2 := s.pool.GetOrder(t.TakerOrderId)
@@ -212,6 +213,7 @@ func (s *Settlement) retryFailedSettlements() {
 			common.Error("aleo settlement: retry skip, bad amount", "trade", t.OrderId, "amount", t.Amount)
 			continue
 		}
+		s.pool.UpdateTradeSettleStatus(t.OrderId, SettleSettling)
 		if err := s.executeSettle(buyPO.Ciphertext, sellPO.Ciphertext, sellPO.OpFund, buyPO.OpFund, buyPO.Creds,
 			uint64(price.IntPart()), uint64(amount.IntPart())); err != nil {
 			common.Error("aleo settlement: retry settle failed", "maker", t.OrderId, "taker", t.TakerOrderId, "err", err)

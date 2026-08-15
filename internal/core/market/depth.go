@@ -19,8 +19,10 @@ type Depth struct {
 type QuoteDepths struct {
 	SeqId    int64                `json:"seqId"`
 	ID       int64                `json:"id"`
-	Bids     [][2]decimal.Decimal `json:"bids,omitempty"`
-	Asks     [][2]decimal.Decimal `json:"asks,omitempty"`
+	// bids/asks 不带 omitempty：空盘也广播空数组，前端收到空快照应清空该
+	// symbol 的深度（否则切币对/重连后残留已不存在的挂单）
+	Bids     [][2]decimal.Decimal `json:"bids"`
+	Asks     [][2]decimal.Decimal `json:"asks"`
 	Ts       int64                `json:"ts"`
 	Version  int64                `json:"version"`
 	Type     string               `json:"type"`

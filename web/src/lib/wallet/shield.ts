@@ -58,6 +58,11 @@ function extractField(rec: unknown, key: string): number {
   return m ? Number(m[1]) : 0
 }
 
+// record 类型名匹配（recordView.recordname 可能是 'Token' 或完整 'test_usdcx_stablecoin.aleo/Token'）
+function recordIs(rec: unknown, name: string): boolean {
+  return JSON.stringify(rec ?? '').includes(`"${name}"`)
+}
+
 // 人类单位 -> 最小单位（BigInt 避免 u64*u64 溢出 Number）。
 // toUnits('0.015784', 6) -> 15784n；toUnits('63.3553', 6) -> 63355300n
 function toUnits(v: string, decimals: number): bigint {
@@ -175,6 +180,8 @@ export class ShieldWalletAdapter implements AleoWallet {
         console.log('[shield] usdcx records:', JSON.stringify(records).slice(0, 3000))
       }
       for (const rec of records) {
+        // 只聚合 Token record：ComplianceRecord 也带 amount 字段，不过滤会重复计入
+        if (!recordIs(rec, 'Token')) continue
         usdcx += extractField(rec, 'amount')
       }
     } catch {
@@ -253,10 +260,38 @@ export class ShieldWalletAdapter implements AleoWallet {
   // - 卖单：credits.aleo credits（锁定 amount microcredits）
   // 链上确认后由引擎从 tx_id 提取+解密（Order/托管资产/凭证），不再走 /order/tx 换 ciphertext。
   private async placeOrderP4(params: PlaceOrderParams): Promise<PlacedOrder> {
+    if (!this.adapter) throw new Error('Shield 钱包未连接')
     const operator = params.operator || (await fetchOperatorAddress())
     const priceU = toUnits(params.price, 6)
     const amountU = toUnits(params.amount, 6)
     if (priceU <= 0n || amountU <= 0n) throw new Error('价格/数量无效')
+    // 下单前隐私余额预检：executeTransaction 的 record auto-fill 失败只报
+    // "No record matching constraints"，不带余额数据，无法定位是余额不足还是
+    // record 状态（pending/已花费）问题。这里用 requestRecords 自检，报错带出
+    // 钱包实际可见的 record 金额列表。
+    if (params.side === 0) {
+      const needed = (priceU * amountU) / 1000000n
+      const recs = await this.adapter.requestRecords(USDCX_PROGRAM_ID, true, 'unspent')
+      const tokenRecs = recs.filter((r) => recordIs(r, 'Token'))
+      const total = tokenRecs.reduce<number>((s, r) => s + extractField(r, 'amount'), 0)
+      if (total < Number(needed)) {
+        const list = tokenRecs.map((r) => extractField(r, 'amount')).join(', ')
+        throw new Error(
+          `隐私 USDCX 余额不足：${tokenRecs.length} 条 Token record 共 ${(total / 1e6).toFixed(6)} USDCX` +
+            `（${list || '无记录'} 微单位），买单需锁定 ${(Number(needed) / 1e6).toFixed(6)} USDCX`
+        )
+      }
+    } else {
+      const recs = await this.adapter.requestRecords('credits.aleo', true, 'unspent')
+      const amounts = recs.map((r) => extractField(r, 'microcredits'))
+      const total = amounts.reduce((s, n) => s + n, 0)
+      if (total < Number(amountU)) {
+        throw new Error(
+          `隐私 ALEO 余额不足：${recs.length} 条 credits record 共 ${total / 1e6} ALEO` +
+            `（${amounts.join(', ') || '无记录'} microcredits），卖单需锁定 ${Number(amountU) / 1e6} ALEO`
+        )
+      }
+    }
     const inputs: TransactionInput[] =
       params.side === 0
         ? [
