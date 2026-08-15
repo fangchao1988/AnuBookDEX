@@ -17,9 +17,9 @@ import {
 } from '../../components/ui/icons'
 
 const PAIRS = [
+  { symbol: 'ALEO/USDCX', starred: true },
   { symbol: 'ETH/USDT', starred: true },
   { symbol: 'BTC/USDT', starred: true },
-  { symbol: 'ALEO/USDCX', starred: true },
 ]
 
 // 顶栏：对齐原型 #topbar（模式切换/交易对/Ticker/工具按钮/钱包）

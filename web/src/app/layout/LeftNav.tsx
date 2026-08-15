@@ -11,7 +11,7 @@ import {
 } from '../../components/ui/icons'
 
 const NAV_ITEMS: { view: string; to: string; label: string; icon: (p: { className?: string }) => JSX.Element; dot?: boolean }[] = [
-  { view: 'trade', to: '/trade/ETHUSDT', label: '交易', icon: IconChart },
+  { view: 'trade', to: '/trade/ALEOUSDCX', label: '交易', icon: IconChart },
   { view: 'assets', to: '/assets', label: '资产', icon: IconAssets },
   { view: 'lp', to: '/lp', label: '流动性', icon: IconLp },
   { view: 'strategy', to: '/strategy', label: 'AI策略', icon: IconStrategy },

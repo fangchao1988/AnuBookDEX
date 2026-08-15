@@ -32,7 +32,7 @@ export const useSettings = create<SettingsState>()((set) => ({
   direction: 'long',
   orderType: 'limit',
   privacyMode: 'standard',
-  pair: 'BTC/USDT',
+  pair: 'ALEO/USDCX',
   leverage: 3,
   marginMode: 'cross',
   simpleMode: false,

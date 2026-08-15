@@ -18,14 +18,14 @@ export default function App() {
           <TopBar />
           <main className="flex-1 min-h-0">
             <Routes>
-              <Route path="/" element={<Navigate to="/trade/ETHUSDT" replace />} />
+              <Route path="/" element={<Navigate to="/trade/ALEOUSDCX" replace />} />
               <Route path="/trade/:symbol" element={<TradePage />} />
               <Route path="/assets" element={<AssetsPage />} />
               <Route path="/lp" element={<LpPage />} />
               <Route path="/strategy" element={<StrategyPage />} />
               <Route path="/darkpool" element={<DarkpoolPage />} />
               <Route path="/activity" element={<ActivityPage />} />
-              <Route path="*" element={<Navigate to="/trade/ETHUSDT" replace />} />
+              <Route path="*" element={<Navigate to="/trade/ALEOUSDCX" replace />} />
             </Routes>
           </main>
         </div>
