@@ -11,9 +11,10 @@ import (
 	"github.com/AnuBookDEX/engine/internal/infra/common"
 )
 
-// HandleOrderTx GET /order/tx/{tx_id} 交易查询代理：
+// HandleOrderTx GET /order/tx/{tx_id}?symbol=ETH_USDT 交易查询代理：
 // 用户钱包广播 place_order transition 后，前端用 tx_id 换取 Order record ciphertext
 // （snarkOS: GET /testnet/transaction/{id}，遍历 execution.transitions[].outputs 找 record）。
+// 程序按交易对路由（?symbol= 优先；缺省用 chain.aleo.program-id）。
 func HandleOrderTx(rpc *RESTClient, programID string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		txID := strings.TrimPrefix(r.URL.Path, "/order/tx/")
@@ -31,7 +32,7 @@ func HandleOrderTx(rpc *RESTClient, programID string) http.HandlerFunc {
 			http.Error(w, "query tx failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		ct, err := extractRecordCiphertext(tx, programID)
+		ct, err := extractRecordCiphertext(tx, programIDFor(r.URL.Query().Get("symbol")))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return

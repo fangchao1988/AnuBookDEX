@@ -19,7 +19,7 @@ export function toRouteSymbol(symbol: string): string {
 // 路由名 -> 展示名（BTCUSDT -> BTC/USDT，按 quote 币种后缀插入 /）
 export function parseRouteSymbol(route: string): string {
   if (route.includes('/')) return route
-  const match = route.match(/^([A-Z0-9]+?)(USDT|USDC|USD)$/i)
+  const match = route.match(/^([A-Z0-9]+?)(USDT|USDCX|USDC|USD)$/i)
   if (match) return `${match[1]}/${match[2].toUpperCase()}`
   return route
 }

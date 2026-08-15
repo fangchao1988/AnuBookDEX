@@ -2,6 +2,7 @@
 // P3 先实现 Aleo 侧（Leo Wallet SDK / DevWallet 降级），Anubis(EVM) 适配器后续补充。
 
 export interface PlaceOrderParams {
+  symbol: string // 交易对（ALEO_USDCX / ETH_USDT），决定 p2/p4 下单构造与精度缩放
   orderId: number
   side: 0 | 1 // 0=buy, 1=sell
   price: string
@@ -14,13 +15,14 @@ export interface PlaceOrderParams {
 
 export interface PlacedOrder {
   txId: string
-  ciphertext: string // Order record ciphertext（POST /order 用）
+  ciphertext: string // Order record ciphertext（p2 POST /order 用；p4 引擎从 tx 提取，可为空）
 }
 
 export interface WalletBalances {
   aleo: string // ALEO（public + shielded）
   usdt: string // anubook_dex_p2 Token record（测试币）
   base: string // base 币种（ETH）Token record
+  usdcx: string // test_usdcx_stablecoin Token record（p4 真实币对 quote，6 位最小单位）
 }
 
 export interface AleoWallet {

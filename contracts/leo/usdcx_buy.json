@@ -1,0 +1,27 @@
+{
+  "config": {
+    "address": "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal",
+    "network": "testnet",
+    "endpoint": "https://api.explorer.provable.com/v1",
+    "consensus_version": 18
+  },
+  "program": "test_usdcx_stablecoin.aleo",
+  "function": "transfer_public_to_private",
+  "outputs": [
+    "{\n  owner: aleo1mnldqsfrwayzfep3t9zusu4y7yknsdhfwx76v5pajla35mrqn5xsvvurhy.private,\n  amount: 1000000u128.private,\n  sender: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  recipient: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  _nonce: 571343313577097861652993816226171851770632747000505893712412975495029636325group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  amount: 1000000u128.private,\n  _nonce: 5320867583437458190821067417803117069442995698804056546934279143238472838360group.public,\n  _version: 1u8.public\n}",
+    "{\n  program_id: test_usdcx_stablecoin.aleo,\n  function_name: transfer_public_to_private,\n  arguments: [\n    1000000u128,\n    aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal\n  ]\n}"
+  ],
+  "transaction_id": "at1jkjatytnna0mqwwzre0uzdtynfqa4k55mjssk8w27hz8y45cqqfqq65syg",
+  "stats": {
+    "storage_cost": 2056,
+    "execution_cost": 858,
+    "priority_fee": 0,
+    "total_cost": 2914
+  },
+  "broadcast": {
+    "fee_id": "au195xl7fuc5ld829rcwydrl5sxw7y2zsec2qc7qezcl9kvktx4jggqqlvhre",
+    "fee_transaction_id": "at1f9kdm59ksglj6rn27kh4srdjyj2qq0l45uf773umqtufcc2k7c8qny5792",
+    "confirmed": true
+  }
+}

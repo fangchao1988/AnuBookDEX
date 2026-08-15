@@ -129,6 +129,28 @@ export async function submitPrivacyOrder(req: {
   }
 }
 
+// 统一 tx_id 下单（p4 真实币对 ALEO/USDCX，标准/隐私下单共用）：
+// 前端只提交链上交易 id（订单参数全部在链上加密 record 中），
+// 引擎从交易提取 + operator view key 解密（POST /order tx_id 模式）
+export async function submitTxOrder(req: {
+  tx_id: string
+  symbol: string
+  trader: string
+}): Promise<AleoOrderResult> {
+  try {
+    const res = await fetch('/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+    })
+    const text = await res.text()
+    if (res.ok) return { ok: true }
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 // 市场最近成交历史（引擎 Hub 缓存回放，market.fills 原始帧数组，最新在前）
 export async function fetchMarketTrades(symbol: string, limit = 50): Promise<WsTradeFrame[]> {
   const res = await fetch(`/api/v1/market/trades?symbol=${encodeURIComponent(symbol)}&limit=${limit}`)
@@ -183,4 +205,18 @@ export async function fetchAleoBalance(address: string): Promise<AleoBalance> {
     const microcredits = Number(raw)
     return { aleo: microcredits / 1e6, microcredits }
   }
+}
+
+// 链上 USDCX 公开余额（test_usdcx_stablecoin balances mapping，u128 微单位，
+// 1 USDCX = 1e6 微单位）。返回微单位整数；地址无记录（null）视为 0。
+export async function fetchUsdcxPublicBalance(address: string): Promise<number> {
+  const res = await fetch(
+    `https://api.explorer.provable.com/v1/testnet/program/test_usdcx_stablecoin.aleo/mapping/balances/${encodeURIComponent(address)}`,
+  )
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  const raw = (await res.text()).trim()
+  if (raw === 'null') return 0
+  // 响应格式为裸值："324960597u128"
+  const micro = Number(raw.replace(/"/g, '').replace(/u128$/, ''))
+  return Number.isFinite(micro) ? micro : 0
 }

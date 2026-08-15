@@ -49,9 +49,17 @@ func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb
 		go l2.Run()
 		common.Info(fmt.Sprintf("init %s l2quote complete", symbol))
 
-		book, err := snap.LoadLatest(symbol)
-		if err != nil {
-			common.Fatal("load snapshot failed:", err, "symbol:", symbol)
+		// DEX 模式默认不恢复订单簿快照：快照中的挂单与链上状态脱节（链上 Order
+		// record 被 settle 一次性消费后，快照挂单已无法结算，且 Order CT 不在
+		// 快照里），恢复只会产生幻影订单。需要恢复的场景可配置
+		// chain.restore-snapshot: true 开启。
+		var book *match.OrderBook
+		if config.GetBool("chain.restore-snapshot", false) {
+			var err error
+			book, err = snap.LoadLatest(symbol)
+			if err != nil {
+				common.Fatal("load snapshot failed:", err, "symbol:", symbol)
+			}
 		}
 		if book == nil {
 			book = match.InitOrderBook(0, symbol)
@@ -69,6 +77,10 @@ func StartEngine(src chain.OrderSource, sink chain.SettlementSink, snap *rocksdb
 
 		go StartMatcher(book, orderCh,
 			func(cloneBook *match.OrderBook) {
+				// 与 LoadLatest 对称：chain.restore-snapshot=false（默认）时不落快照
+				if !config.GetBool("chain.restore-snapshot", false) {
+					return
+				}
 				if err := snap.Save(book.Symbol, cloneBook); err != nil {
 					common.Error("snapshot save error:", err)
 				}

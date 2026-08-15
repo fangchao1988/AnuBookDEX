@@ -59,3 +59,6 @@ vendor/
 # Docker
 Dockerfile
 .dockerignore
+
+# leo CLI 离线安装包（国内服务器构建用，勿提交）
+deploy/leo.zip

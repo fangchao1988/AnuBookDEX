@@ -6,6 +6,7 @@ import { cancelOrder, fetchOrders, fetchTrades, SETTLE_LABEL, STATUS_LABEL, type
 import { Modal } from '../../components/ui/Modal'
 import { toChannelSymbol } from '../../lib/symbol'
 import { dateTimeStr } from '../../lib/format'
+import { scalePairValue } from '../../lib/tokens'
 
 type BottomTab = 'open' | 'history' | 'trades' | 'funding' | 'ai'
 
@@ -43,6 +44,12 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
 
   const openOrders = orders.filter((o) => o.status === 'waiting' || o.status === 'partial')
   const historyOrders = orders.filter((o) => o.status === 'filled' || o.status === 'canceled')
+  // p4 真实币对（ALEO/USDCX）：引擎返回 6 位最小单位，显示换算为人类单位
+  const px = (o: OrderRecord) => scalePairValue(o.symbol, o.price)
+  const amt = (o: OrderRecord) => scalePairValue(o.symbol, o.amount)
+  const fld = (o: OrderRecord) => scalePairValue(o.symbol, o.filled)
+  const tpx = (t: TradeRecord) => scalePairValue(t.symbol, t.price)
+  const tamt = (t: TradeRecord) => scalePairValue(t.symbol, t.amount)
 
   // 链上撤单：点击立即弹窗反馈；撤单处理中按钮禁用（防重复点击）
   const [cancelDialog, setCancelDialog] = useState<{ orderId: number; msg: string; ok: boolean } | null>(null)
@@ -98,9 +105,9 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
                 o.symbol.replace('_', '/'),
                 <span className={o.side === 'buy' ? 'text-up' : 'text-down'}>{o.side === 'buy' ? '买入' : '卖出'}</span>,
                 o.type,
-                o.price,
-                o.amount,
-                o.filled,
+                px(o),
+                amt(o),
+                fld(o),
                 <Tag variant={STATUS_LABEL[o.status].cls}>{STATUS_LABEL[o.status].text}</Tag>,
                 <button
                   className={`text-blue bg-transparent border-none text-xs hover:underline ${
@@ -124,9 +131,9 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
                 o.symbol.replace('_', '/'),
                 <span className={o.side === 'buy' ? 'text-up' : 'text-down'}>{o.side === 'buy' ? '买入' : '卖出'}</span>,
                 o.type,
-                o.price,
-                o.amount,
-                o.filled,
+                px(o),
+                amt(o),
+                fld(o),
                 <Tag variant={STATUS_LABEL[o.status].cls}>{STATUS_LABEL[o.status].text}</Tag>,
               ],
             }))}
@@ -144,8 +151,8 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
                 dateTimeStr(t.ts),
                 t.symbol.replace('_', '/'),
                 <span className={t.side === 'buy' ? 'text-up' : 'text-down'}>{t.side === 'buy' ? '买入' : '卖出'}</span>,
-                t.price,
-                t.amount,
+                tpx(t),
+                tamt(t),
                 <span className="text-text-muted">{t.taker.slice(0, 10)}…</span>,
                 <Tag variant={SETTLE_LABEL[t.settle_status ?? 'pending'].cls}>
                   {SETTLE_LABEL[t.settle_status ?? 'pending'].text}

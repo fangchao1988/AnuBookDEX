@@ -1,0 +1,26 @@
+{
+  "config": {
+    "address": "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal",
+    "network": "testnet",
+    "endpoint": "https://api.explorer.provable.com/v1",
+    "consensus_version": 18
+  },
+  "program": "credits.aleo",
+  "function": "transfer_public_to_private",
+  "outputs": [
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  microcredits: 5000000u64.private,\n  _nonce: 2438506102148183695096413724479357875121813567479077463482926416501141395108group.public,\n  _version: 1u8.public\n}",
+    "{\n  program_id: credits.aleo,\n  function_name: transfer_public_to_private,\n  arguments: [\n    aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal,\n    5000000u64\n  ]\n}"
+  ],
+  "transaction_id": "at1jnnj4y6w4x97fsna9vklu87unmdc04hp933xnvuhrjl9a8t26vysnvhkhk",
+  "stats": {
+    "storage_cost": 1652,
+    "execution_cost": 652,
+    "priority_fee": 0,
+    "total_cost": 2304
+  },
+  "broadcast": {
+    "fee_id": "au1zvtvjmxu4p0m379spwq0c49dmwx4xd64z6zfketg7500qnqkgcpsrhskzj",
+    "fee_transaction_id": "at1aj3vaxyp9thy8yxppa02x7waqvpv8mhgrxt7d96cghcv79kfgyqszqwdyl",
+    "confirmed": true
+  }
+}

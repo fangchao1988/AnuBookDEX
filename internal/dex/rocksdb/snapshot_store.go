@@ -123,6 +123,9 @@ func (s *SnapshotStore) LoadLatest(symbol string) (*match.OrderBook, error) {
 	if err := dec.Decode(book); err != nil {
 		return nil, fmt.Errorf("decode order book: %w", err)
 	}
+	// cache 未导出不参与 gob 编码，解码后从 BuySet/SellSet 重建索引
+	// （否则 Find/Dequeue 会 cache miss 触发 Fatal）
+	book.RebuildCache()
 
 	s.mu.Lock()
 	s.cache[symbol] = book

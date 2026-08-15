@@ -1,0 +1,27 @@
+{
+  "config": {
+    "address": "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal",
+    "network": "testnet",
+    "endpoint": "https://api.explorer.provable.com/v1",
+    "consensus_version": 18
+  },
+  "program": "anubook_dex_p4.aleo",
+  "function": "place_order_sell",
+  "outputs": [
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  order_id: 4u128.private,\n  side: 1u8.private,\n  price: 15784u64.private,\n  amount: 5000000u64.private,\n  deadline: 18789471u32.private,\n  _nonce: 4420113024084937301420143846002561964946138761403476649376227931837730773680group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  microcredits: 5000000u64.private,\n  _nonce: 4203507011953255629041256591674091646247815827888966974647572116611976342209group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  microcredits: 0u64.private,\n  _nonce: 2567187931088226156922615450789584524449843935796487604206136110905850774717group.public,\n  _version: 1u8.public\n}"
+  ],
+  "transaction_id": "at148psvzm7rsqdn589xywlvus60vhvtscz5tnvmtlchfrry29c7uzsfhfnyx",
+  "stats": {
+    "storage_cost": 3823,
+    "execution_cost": 0,
+    "priority_fee": 0,
+    "total_cost": 3823
+  },
+  "broadcast": {
+    "fee_id": "au1cdsaxsh34vrwmhhrej4qey5tgwwq4wrdecavj52pnkz5qrygggqq7cj2d0",
+    "fee_transaction_id": "at1fq9z78rcnzhw8hruwpdvz28hpn3np7rg24splfv6fr8cy9jl6gpsyuy0s4",
+    "confirmed": true
+  }
+}

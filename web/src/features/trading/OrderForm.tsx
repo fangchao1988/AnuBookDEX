@@ -5,8 +5,8 @@ import { useUi } from '../../stores/ui'
 import { toDecimal } from '../../lib/decimal'
 import { formatNumber } from '../../lib/format'
 import { toChannelSymbol } from '../../lib/symbol'
-import { pairTokens } from '../../lib/tokens'
-import { nextOrderId, submitAleoOrder, submitPrivacyOrder } from '../../lib/api/orders'
+import { pairMode, pairTokens } from '../../lib/tokens'
+import { nextOrderId, submitAleoOrder, submitPrivacyOrder, submitTxOrder } from '../../lib/api/orders'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../../stores/wallet'
 
@@ -97,10 +97,12 @@ export function OrderForm() {
   const timerRef = useRef<number | null>(null)
 
   // 三种下单模式：
-  // - 标准：钱包 place_order（链上锁仓）-> 引擎换 ciphertext -> POST /order（明文）
-  // - 隐私：钱包 place_order（链上加密 record）-> POST /order/privacy（仅 tx_id，不发明文；
+  // - 标准：钱包链上锁仓 -> 引擎下单（p2 明文 / p4 tx_id 提取）
+  // - 隐私：钱包链上锁仓（链上加密 record）-> POST /order/privacy（仅 tx_id，不发明文；
   //         引擎用 operator view key 解密 Order record 后撮合 —— Aleo 原生隐私）
   // - 暗池：跳转暗池页（暗池撮合暂未实现）
+  // p4 真实币对（ALEO/USDCX）：标准与隐私都走 tx_id —— 引擎统一提取+解密
+  // （订单参数只存在于链上加密 record，HTTP 不传价格/数量）
   const submit = async () => {
     if (submitState === 'submitting') return
 
@@ -110,6 +112,7 @@ export function OrderForm() {
     }
 
     const channelSymbol = toChannelSymbol(pair)
+    const isP4 = pairMode(channelSymbol) === 'p4-real'
     const tokens = pairTokens(channelSymbol)
     const clean = (v: string) => v.replace(/,/g, '').trim()
     const priceVal = clean(price)
@@ -128,9 +131,10 @@ export function OrderForm() {
     let ciphertext: string | undefined
     try {
       if (wallet.isConnected() && wallet.kind !== 'dev') {
-        // 链上锁仓（p2 完整版有 place_order）：钱包执行 place_order -> txId -> 引擎代理换 ciphertext；
+        // 链上锁仓：钱包执行 place_order（p2）/place_order_buy/sell（p4）-> 链上 txId；
         // operator 地址由适配器从引擎 /api/v1/operator 获取（chain.aleo.address 配置）
         const placed = await wallet.placeOrder({
+          symbol: channelSymbol,
           orderId,
           side: direction === 'long' ? 0 : 1,
           price: priceVal,
@@ -143,8 +147,9 @@ export function OrderForm() {
         placedTxId = placed.txId
         ciphertext = placed.ciphertext
       } else {
-        // DevWallet / 未连接：联调占位（隐私模式必须真实钱包 —— 链上解密）
+        // DevWallet / 未连接：联调占位（隐私模式与 p4 真实币对必须真实钱包 —— 链上提取+解密）
         if (privacyMode === 'privacy') throw new Error('隐私下单需要真实钱包（链上加密+解密撮合）')
+        if (isP4) throw new Error('ALEO/USDCX 下单需要 Shield 钱包（链上托管+引擎提取）')
         ciphertext = 'ciphertext1dev-ui-placeholder'
         if (!import.meta.env.DEV && wallet.kind !== 'dev') {
           throw new Error('请先连接钱包')
@@ -156,8 +161,9 @@ export function OrderForm() {
       return
     }
 
-    const res =
-      privacyMode === 'privacy'
+    const res = isP4
+      ? await submitTxOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
+      : privacyMode === 'privacy'
         ? await submitPrivacyOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
         : await submitAleoOrder({
             order_id: orderId,
@@ -178,9 +184,12 @@ export function OrderForm() {
   }
 
   const base = pair.split('/')[0]
+  const quote = pair.split('/')[1]
   const isPerp = tradingMode === 'perp'
   //const balance = isPerp ? '15,133.45 USDT' : '128,456.78 USDT'
   const balances = useWallet((s) => s.balances)
+  // quote 余额：p4 真实币对用 USDCX（test_usdcx_stablecoin Token），p2 用 USDT
+  const quoteBalance = pairMode(toChannelSymbol(pair)) === 'p4-real' ? balances?.usdcx ?? '--' : balances?.usdt ?? '--'
   // 强平价估算：liq = entry * (1 - 1/lev)（对齐原型 updateLiquidationEstimate，decimal 精确计算）
   const liqPrice = useMemo(() => {
     const entry = toDecimal(68245)
@@ -196,7 +205,7 @@ export function OrderForm() {
     <div className="bg-bg-secondary border-r border-line p-3 border-b border-line">
       <div className="flex justify-between mb-2.5 text-xs">
         <span className="text-text-muted">{isPerp ? '账户权益' : '钱包余额'}</span>
-        <span className="text-text-primary font-semibold">{balances?.usdt ?? '0'} USDT</span>
+        <span className="text-text-primary font-semibold">{quoteBalance} {quote}</span>
       </div>
 
       {/* 隐私模式选择器 */}
@@ -270,13 +279,13 @@ export function OrderForm() {
       {/* 价格 / 触发价 / 数量 */}
       {(orderType === 'limit' || orderType === 'stop-limit') && (
         <div className="mb-2">
-          <label className="block text-[11px] text-text-muted mb-0.5">价格 (USDT)</label>
+          <label className="block text-[11px] text-text-muted mb-0.5">价格 ({quote})</label>
           <input className={inputCls} value={price} onChange={(e) => setPrice(e.target.value)} />
         </div>
       )}
       {(orderType === 'stop-limit' || orderType === 'stop-market') && (
         <div className="mb-2">
-          <label className="block text-[11px] text-text-muted mb-0.5">触发价格 (USDT)</label>
+          <label className="block text-[11px] text-text-muted mb-0.5">触发价格 ({quote})</label>
           <input
             className={inputCls}
             value={stopPrice}

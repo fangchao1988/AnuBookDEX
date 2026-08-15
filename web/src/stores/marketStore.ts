@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { wsClient, type WsStatus, type WsPayload } from '../lib/ws/client'
 import { fetchMarketTrades } from '../lib/api/orders'
+import { scalePairValue } from '../lib/tokens'
 
 // 实时行情 store（P2）：订阅频道 -> 增量维护订单簿/K线/成交/Ticker。
 // 频道命名沿用后端：depth.BTC_USDT / kline.BTC_USDT.1min / trade.BTC_USDT / ticker.BTC_USDT
@@ -146,8 +147,8 @@ export async function loadTradeHistory(symbol: string) {
     for (const f of frames) {
       for (const t of f.data ?? []) {
         rows.push({
-          price: String(t.price),
-          qty: String(t.vol),
+          price: scalePairValue(symbol, t.price),
+          qty: scalePairValue(symbol, t.vol),
           time: Number(t.ts),
           side: t.direction === 'buy' ? 'buy' : 'sell',
         })
@@ -178,10 +179,11 @@ function applyDepth(symbol: string, p: WsPayload) {
   const asks = (p.asks as [string, string][]) ?? []
   if (bids.length === 0 && asks.length === 0) return
   useMarket.setState((s) => {
-    // 后端广播为全量快照帧（QuoteDepths.bids/asks），整体替换，顺序由后端保证
+    // 后端广播为全量快照帧（QuoteDepths.bids/asks），整体替换，顺序由后端保证。
+    // p4 真实币对（ALEO/USDCX）引擎发送 6 位最小单位，入库前换算为人类单位
     const next = { bids: new Map<string, string>(), asks: new Map<string, string>() }
-    for (const [price, qty] of bids) next.bids.set(String(price), String(qty))
-    for (const [price, qty] of asks) next.asks.set(String(price), String(qty))
+    for (const [price, qty] of bids) next.bids.set(scalePairValue(symbol, price), scalePairValue(symbol, qty))
+    for (const [price, qty] of asks) next.asks.set(scalePairValue(symbol, price), scalePairValue(symbol, qty))
     return { depths: { ...s.depths, [symbol]: next } }
   })
 }
@@ -190,8 +192,8 @@ function applyTrade(symbol: string, p: WsPayload) {
   const list = (p.data as { price: string; vol: string; ts: number; direction: string }[]) ?? []
   if (list.length === 0) return
   const rows: TradeRow[] = list.map((t) => ({
-    price: String(t.price),
-    qty: String(t.vol),
+    price: scalePairValue(symbol, t.price),
+    qty: scalePairValue(symbol, t.vol),
     time: Number(t.ts),
     side: t.direction === 'buy' ? 'buy' : 'sell',
   }))
@@ -207,11 +209,11 @@ function applyKline(symbol: string, interval: string, p: WsPayload) {
   if (!ts) return
   const candle: Candle = {
     time: ts,
-    open: Number(k.open),
-    high: Number(k.high),
-    low: Number(k.low),
-    close: Number(k.close),
-    volume: Number(k.vol ?? k.turnOver ?? 0),
+    open: Number(scalePairValue(symbol, k.open)),
+    high: Number(scalePairValue(symbol, k.high)),
+    low: Number(scalePairValue(symbol, k.low)),
+    close: Number(scalePairValue(symbol, k.close)),
+    volume: Number(scalePairValue(symbol, k.vol ?? k.turnOver ?? 0)),
   }
   useMarket.setState((s) => {
     const byInterval = s.klines[symbol] ?? {}
@@ -234,16 +236,17 @@ function applyTicker(symbol: string, p: WsPayload) {
     tickers: {
       ...s.tickers,
       [symbol]: {
-        open: String(t.open ?? ''),
-        close: String(t.close),
-        high: String(t.high ?? ''),
-        low: String(t.low ?? ''),
-        vol: String(t.vol ?? ''),
-        turnOver: String(t.turnOver ?? ''),
-        change: String(t.change ?? ''),
+        open: scalePairValue(symbol, t.open ?? ''),
+        close: scalePairValue(symbol, t.close),
+        high: scalePairValue(symbol, t.high ?? ''),
+        low: scalePairValue(symbol, t.low ?? ''),
+        vol: scalePairValue(symbol, t.vol ?? ''),
+        turnOver: scalePairValue(symbol, t.turnOver ?? ''),
+        // change 为价格差（同精度缩放）；changePercent 为比例（不缩放）
+        change: scalePairValue(symbol, t.change ?? ''),
         changePercent: String(t.changePercent ?? ''),
-        bidPrice: String(t.bidPrice ?? ''),
-        askPrice: String(t.askPrice ?? ''),
+        bidPrice: scalePairValue(symbol, t.bidPrice ?? ''),
+        askPrice: scalePairValue(symbol, t.askPrice ?? ''),
       },
     },
   }))

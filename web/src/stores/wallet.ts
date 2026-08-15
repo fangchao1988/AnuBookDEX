@@ -11,6 +11,7 @@ interface WalletState {
   restore: () => Promise<void>
   connect: () => Promise<void>
   disconnect: () => void
+  clearError: () => void
   refreshBalances: (baseSymbol: string) => Promise<void>
   mintToken: (tokenId: number, amount: number) => Promise<void>
   deployProgram: () => Promise<string>
@@ -59,6 +60,8 @@ export const useWallet = create<WalletState>()((set, get) => ({
     localStorage.removeItem('aleo_address')
     set({ address: null, balances: null })
   },
+
+  clearError: () => set({ error: '' }),
 
   refreshBalances: async (baseSymbol: string) => {
     try {

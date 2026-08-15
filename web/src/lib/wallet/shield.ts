@@ -11,16 +11,63 @@ import { ShieldWalletAdapter as ShieldAdapter } from '@provablehq/aleo-wallet-ad
 import { WalletDecryptPermission } from '@provablehq/aleo-wallet-standard'
 import type { Network, TransactionInput } from '@provablehq/aleo-types'
 import type { AleoWallet, PlaceOrderParams, PlacedOrder, WalletBalances } from './types'
-import { fetchAleoBalance, fetchOperatorAddress } from '../api/orders'
+import { fetchAleoBalance, fetchOperatorAddress, fetchUsdcxPublicBalance } from '../api/orders'
+import { pairMode } from '../tokens'
 
 export const PROGRAM_ID = 'anubook_dex_p2.aleo'
+// p4 真实币对（ALEO/USDCX）：跨程序托管（USDCX Token + credits.aleo）
+export const PROGRAM_ID_P4 = 'anubook_dex_p5.aleo'
+export const USDCX_PROGRAM_ID = 'test_usdcx_stablecoin.aleo'
 
-// 解析 Aleo 类型化字符串（'123u64' -> 123；'2u32' -> 2；'...group' -> 0；纯数字原样返回）
+// 解析 Aleo 类型化字符串（'123u64' -> 123；'2u32' -> 2；'1262u128.private' -> 1262；
+// '...group' -> 0；纯数字原样返回）
 function parseTyped(v: string | undefined): number {
   if (!v) return 0
-  // 类型后缀为字母+数字（u64/u32/...），需整体剥掉：/[a-z]+\d+$/ 匹配 'u64'/'u32'
-  const n = Number(String(v).replace(/[a-z]+\d+$/i, ''))
+  // 类型后缀（u64/u128/u32）与可见性后缀（.private/.public）都可选，
+  // 链上明文 record 字段的标准格式是 '80000000u64.private'
+  const n = Number(String(v).replace(/(u\d+)?(\.(private|public))?$/, ''))
   return Number.isFinite(n) ? n : 0
+}
+
+// Shield requestRecords 返回结构未定型（unknown[]，适配器直接透传），按候选路径提取字段：
+// recordView.fields / data.plaintext / 顶层 plaintext（对象或 Aleo 明文字符串）。
+// 都取不到时序列化整个 record 按 key 兜底。返回数值（0 = 不存在）。
+function extractField(rec: unknown, key: string): number {
+  const env = (rec ?? {}) as Record<string, unknown>
+  const candidates: unknown[] = [
+    (env.recordView as { fields?: unknown } | undefined)?.fields,
+    (env.data as { plaintext?: unknown } | undefined)?.plaintext,
+    env.plaintext,
+  ]
+  for (const c of candidates) {
+    if (!c) continue
+    if (typeof c === 'object' && !Array.isArray(c)) {
+      const v = (c as Record<string, unknown>)[key]
+      if (v !== undefined) {
+        const n = parseTyped(String(v))
+        if (n > 0) return n
+      }
+    } else if (typeof c === 'string') {
+      // Aleo record 明文字符串（'  amount: 1262u128.private, ...'）
+      const m = new RegExp(`(?:^|[\\s{,{])${key}\\s*:\\s*"?([0-9]+)`).exec(c)
+      if (m) return Number(m[1])
+    }
+  }
+  // 最后兜底：JSON 序列化后按 "key": "123..." 提取
+  const m = new RegExp(`"${key}"\\s*:\\s*"?([0-9]+)`).exec(JSON.stringify(rec ?? ''))
+  return m ? Number(m[1]) : 0
+}
+
+// 人类单位 -> 最小单位（BigInt 避免 u64*u64 溢出 Number）。
+// toUnits('0.015784', 6) -> 15784n；toUnits('63.3553', 6) -> 63355300n
+function toUnits(v: string, decimals: number): bigint {
+  const n = v.replace(/,/g, '').trim()
+  const [int, frac = ''] = n.split('.')
+  if (!/^\d+$/.test(int) || (frac !== '' && !/^\d+$/.test(frac)) || int === '') {
+    throw new Error(`无效数值: ${v}`)
+  }
+  const scale = 10n ** BigInt(decimals)
+  return BigInt(int) * scale + BigInt((frac + '0'.repeat(decimals)).slice(0, decimals) || '0')
 }
 
 export class ShieldWalletAdapter implements AleoWallet {
@@ -49,7 +96,14 @@ export class ShieldWalletAdapter implements AleoWallet {
     if (this.adapter.readyState !== 'Installed') {
       throw new Error('Shield 钱包未就绪，请打开扩展并解锁')
     }
-    const account = await this.adapter.connect(this.network, WalletDecryptPermission.UponRequest, [PROGRAM_ID])
+    const account = await this.adapter.connect(this.network, WalletDecryptPermission.UponRequest, [
+      PROGRAM_ID,
+      PROGRAM_ID_P4,
+      USDCX_PROGRAM_ID,
+      // 卖单需要钱包从 credits.aleo 选 credits record 作输入（InputRequest grant 校验），
+      // 缺省会报 "record input refused for credits.aleo"
+      'credits.aleo',
+    ])
     this.address = account.address
     return this.address
   }
@@ -73,52 +127,77 @@ export class ShieldWalletAdapter implements AleoWallet {
     } catch (e) {
       if (import.meta.env.DEV) console.log('[shield] public balance query failed:', e)
     }
-    // ALEO shielded records（credits.aleo 的 Credits record）
+    // ALEO shielded records（credits.aleo 的 Credits record）。
+    // statusFilter='unspent' 只聚合未花费记录：autojoin 会消费小 credits records
+    // 合并成大 record，默认 'all' 会把已消费的旧 records 一起计入导致余额虚高
+    let aleoMicro = 0
     try {
-      const credits = await this.adapter.requestRecords('credits.aleo', true)
+      const credits = await this.adapter.requestRecords('credits.aleo', true, 'unspent')
       if (import.meta.env.DEV) {
         console.log('[shield] credits.aleo records:', JSON.stringify(credits).slice(0, 3000))
       }
       for (const rec of credits) {
-        const env = rec as unknown as { recordView?: { fields?: Record<string, string> }; data?: { plaintext?: Record<string, string>; microcredits?: string } }
-        const fields = env.recordView?.fields ?? env.data?.plaintext ?? {}
-        aleo += parseTyped(fields.microcredits ?? env.data?.microcredits) / 1e6
+        aleoMicro += extractField(rec, 'microcredits')
       }
     } catch {
       // credits.aleo 未授权/无记录：忽略，只用公开余额
     }
+    aleo += aleoMicro / 1e6
 
     // anubook_dex_p2 Token records（测试币 USDT/ETH）
     const sum: Record<number, number> = {}
     try {
-      const records = await this.adapter.requestRecords(PROGRAM_ID, true)
+      const records = await this.adapter.requestRecords(PROGRAM_ID, true, 'unspent')
       if (import.meta.env.DEV) {
         console.log('[shield] anubook_dex_p2 records:', JSON.stringify(records).slice(0, 3000))
       }
       for (const rec of records) {
-        const env = rec as unknown as { recordView?: { fields?: Record<string, string> }; data?: { plaintext?: Record<string, string>; token_id?: string; amount?: string } }
-        const fields = env.recordView?.fields ?? env.data?.plaintext ?? {}
-        const tid = parseTyped(fields.token_id ?? env.data?.token_id)
+        const tid = extractField(rec, 'token_id')
         if (tid === 1 || tid === 2) {
-          sum[tid] = (sum[tid] ?? 0) + parseTyped(fields.amount ?? env.data?.amount)
+          sum[tid] = (sum[tid] ?? 0) + extractField(rec, 'amount')
         }
       }
     } catch {
       // 无测试币记录：余额为空
     }
+
+    // USDCX：公开余额（balances mapping）+ 隐私 Token records（p4 真实币对 quote；
+    // 6 位最小单位 -> 人类单位），与 ALEO 同模式（公开 + 私有总额）
+    let usdcx = 0
+    try {
+      usdcx += await fetchUsdcxPublicBalance(this.address)
+    } catch (e) {
+      if (import.meta.env.DEV) console.log('[shield] usdcx public balance query failed:', e)
+    }
+    try {
+      const records = await this.adapter.requestRecords(USDCX_PROGRAM_ID, true, 'unspent')
+      if (import.meta.env.DEV) {
+        console.log('[shield] usdcx records:', JSON.stringify(records).slice(0, 3000))
+      }
+      for (const rec of records) {
+        usdcx += extractField(rec, 'amount')
+      }
+    } catch {
+      // 无 USDCX 记录：余额为空
+    }
     return {
-      aleo: aleo > 0 ? String(aleo) : '--',
+      aleo: aleo > 0 ? String(Math.round(aleo * 1e6) / 1e6) : '--',
       usdt: sum[2] !== undefined ? String(sum[2]) : '--',
       base: sum[1] !== undefined ? String(sum[1]) : '--',
+      usdcx: usdcx > 0 ? String(usdcx / 1e6) : '--',
     }
   }
 
-  // place_order：inputs[0] 为 fund Token record —— 钱包自动选择未花费记录
+  // place_order：按交易对模式分发（p4 真实币对 ALEO/USDCX / p2 铸币 ETH_USDT）。
+  // p2：inputs[0] 为 fund Token record —— 钱包自动选择未花费记录
   // （Aleo Wallet Standard InputRequest：filters 按 token_id 匹配；买单锁 quote、卖单锁 base）
   // 注：合约 MVP 断言 fund.amount == price*amount（严格相等），用户需持有恰好金额的 Token record；
   //     record 自动选择 + 微单位换算待真钱包实测确认
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
     if (!this.adapter) throw new Error('Shield 钱包未连接')
+    if (pairMode(params.symbol) === 'p4-real') {
+      return this.placeOrderP4(params)
+    }
     // operator 地址来自引擎配置（chain.aleo.address），place_order 的 Order record 归 operator
     const operator = params.operator || (await fetchOperatorAddress())
     const neededToken = params.side === 0 ? params.quoteToken : params.baseToken
@@ -148,33 +227,17 @@ export class ShieldWalletAdapter implements AleoWallet {
       `${params.deadline}u32`,
       operator,
     ]
-    const result = await this.adapter.executeTransaction({
+    const onchainId = await this.executeAndAwait({
       program: PROGRAM_ID,
       function: 'place_order',
       inputs,
       fee: 0, // Shield 覆盖部分 gas（免费转账模式）；place_order 费用模式待实测
     })
-    // Shield 返回内部 ID（shield_...），经 transactionStatus 轮询等到链上确认
-    // （status=accepted 才上链；期间 transactionId 可能返回但链上不可见）
-    const shieldId = result.transactionId
-    let onchainId = ''
-    for (let i = 0; i < 60; i++) {
-      const status = await this.adapter.transactionStatus(shieldId)
-      if (status.status === 'accepted' && status.transactionId) {
-        onchainId = status.transactionId
-        break
-      }
-      if (status.status === 'failed' || status.status === 'rejected') {
-        throw new Error(`place_order 交易失败: ${status.status}${status.error ? `: ${status.error}` : ''}`)
-      }
-      await new Promise((r) => setTimeout(r, 2000))
-    }
-    if (!onchainId) throw new Error('等待链上确认超时（120s），请稍后查询委托状态')
     // 引擎代理：onchain txId -> Order record ciphertext（record owner 为 operator）。
-    // 链上确认后节点索引可能有延迟，查询重试最多 30s
+    // 链上确认后节点索引可能有延迟，查询重试最多 30s；symbol 用于引擎按交易对路由程序 id
     let lastErr = ''
     for (let i = 0; i < 15; i++) {
-      const res = await fetch(`/order/tx/${encodeURIComponent(onchainId)}`)
+      const res = await fetch(`/order/tx/${encodeURIComponent(onchainId)}?symbol=${encodeURIComponent(params.symbol)}`)
       if (res.ok) {
         const data = (await res.json()) as { ciphertext: string }
         return { txId: onchainId, ciphertext: data.ciphertext }
@@ -183,6 +246,78 @@ export class ShieldWalletAdapter implements AleoWallet {
       await new Promise((r) => setTimeout(r, 2000))
     }
     throw new Error(`获取 Order record 失败: ${lastErr || '超时'}`)
+  }
+
+  // place_order_buy/sell（p4 真实币对 ALEO/USDCX，6 位最小单位）：
+  // - 买单：USDCX Token（锁定 (price*amount)/1e6）+ Credentials（USDCX 合规凭证）
+  // - 卖单：credits.aleo credits（锁定 amount microcredits）
+  // 链上确认后由引擎从 tx_id 提取+解密（Order/托管资产/凭证），不再走 /order/tx 换 ciphertext。
+  private async placeOrderP4(params: PlaceOrderParams): Promise<PlacedOrder> {
+    const operator = params.operator || (await fetchOperatorAddress())
+    const priceU = toUnits(params.price, 6)
+    const amountU = toUnits(params.amount, 6)
+    if (priceU <= 0n || amountU <= 0n) throw new Error('价格/数量无效')
+    const inputs: TransactionInput[] =
+      params.side === 0
+        ? [
+            {
+              type: 'record',
+              program: USDCX_PROGRAM_ID,
+              recordname: 'Token',
+              // p5 合约断言 fund.amount >= (price*amount)/1e6（多出部分找零回用户），
+              // 用 gte 过滤让钱包自动选金额足够的 record（否则可能选中金额不足的
+              // 小 record 导致链上断言失败）；join 合并的大额 record 同样满足
+              filters: { amount: { gte: `${(priceU * amountU) / 1000000n}u128` } },
+            },
+            // 合规凭证（get_credentials 产出；多凭证场景钱包选首个，MVP 单凭证）
+            { type: 'record', program: USDCX_PROGRAM_ID, recordname: 'Credentials' },
+            `${params.orderId}u128`,
+            `${priceU}u64`,
+            `${amountU}u64`,
+            `${params.deadline}u32`,
+            operator,
+          ]
+        : [
+            {
+              type: 'record',
+              program: 'credits.aleo',
+              recordname: 'credits',
+              // p5 合约断言 fund.microcredits >= amount（多出部分找零回用户），
+              // 用 gte 过滤让钱包自动选金额足够的 record
+              filters: { microcredits: { gte: `${amountU}u64` } },
+            },
+            `${params.orderId}u128`,
+            `${priceU}u64`,
+            `${amountU}u64`,
+            `${params.deadline}u32`,
+            operator,
+          ]
+    const onchainId = await this.executeAndAwait({
+      program: PROGRAM_ID_P4,
+      function: params.side === 0 ? 'place_order_buy' : 'place_order_sell',
+      inputs,
+      fee: 0, // Shield 覆盖 gas 模式；p4 费用模式待实测
+    })
+    return { txId: onchainId, ciphertext: '' }
+  }
+
+  // executeTransaction + 轮询链上确认（Shield 返回内部 ID shield_...，
+  // status=accepted 才上链；期间 transactionId 可能返回但链上不可见）
+  private async executeAndAwait(tx: { program: string; function: string; inputs: TransactionInput[]; fee: number }): Promise<string> {
+    if (!this.adapter) throw new Error('Shield 钱包未连接')
+    const result = await this.adapter.executeTransaction(tx)
+    const shieldId = result.transactionId
+    for (let i = 0; i < 60; i++) {
+      const status = await this.adapter.transactionStatus(shieldId)
+      if (status.status === 'accepted' && status.transactionId) {
+        return status.transactionId
+      }
+      if (status.status === 'failed' || status.status === 'rejected') {
+        throw new Error(`${tx.function} 交易失败: ${status.status}${status.error ? `: ${status.error}` : ''}`)
+      }
+      await new Promise((r) => setTimeout(r, 2000))
+    }
+    throw new Error('等待链上确认超时（120s），请稍后查询委托状态')
   }
 
   // 铸测试币：mint(amount: u64, token_id: u32)，Token record 归执行者（合约 main.leo）

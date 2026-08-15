@@ -6,7 +6,7 @@
 # 前置：
 #   1. 已上传项目到服务器（/www/wwwroot/AnuBookDEX 或任意目录）
 #   2. .env.aleo 已创建（从 .env.aleo.example 复制并填入密钥）
-#   3. conf/prod-aleo.yaml 已就位（生产配置模板）
+#   3. conf/test-aleo.yaml 已就位（测试配置模板）
 #   4. Docker + Docker Compose 已安装（宝塔 Docker 管理器插件）
 
 set -e

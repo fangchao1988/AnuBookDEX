@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { useSettings } from '../../stores/settings'
 import { useWallet } from '../../stores/wallet'
+import { toChannelSymbol } from '../../lib/symbol'
+import { pairMode } from '../../lib/tokens'
 
 // 持仓列表：对齐原型 #positions-panel（现货卡片 + 杠杆卡片 + 风险条）
 // P3：钱包连接后展示链上余额（requestRecords 聚合），未连接展示演示数据
 export function PositionsPanel() {
   const tradingMode = useSettings((s) => s.tradingMode)
   const isPerp = tradingMode === 'perp'
+  // p4 真实币对（ALEO/USDCX）：余额只显示 ALEO 与 USDCX，不显示 p2 铸币（ETH/USDT）
+  const pair = useSettings((s) => s.pair)
+  const isP4 = pairMode(toChannelSymbol(pair)) === 'p4-real'
   const walletAddress = useWallet((s) => s.address)
   const balances = useWallet((s) => s.balances)
   const walletMint = useWallet((s) => s.mintToken)
@@ -59,49 +64,58 @@ export function PositionsPanel() {
             <span className="text-text-muted">ALEO</span>
             <span className="font-mono">{balances.aleo}</span>
           </div>
-          <div className="flex justify-between text-[11px] mb-0.5">
-            <span className="text-text-muted">USDT</span>
-            <span className="font-mono">{balances.usdt}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">ETH</span>
-            <span className="font-mono">{balances.base}</span>
-          </div>
-          <div className="mt-2 flex gap-1.5 items-center">
-            <input
-              type="text"
-              value={mintAmount}
-              onChange={(e) => setMintAmount(e.target.value)}
-              className="w-20 bg-bg-tertiary border border-line text-text-primary px-1.5 py-1 rounded text-[10px] font-mono focus:border-blue focus:outline-none"
-              placeholder="金额"
-              title="铸币金额（下单锁仓需精确匹配 price×amount）"
-            />
-            <span className="text-[9px] text-text-muted">铸币金额（匹配下单锁仓）</span>
-          </div>
-          <div className="flex gap-1.5 mt-1.5">
-            <button
-              className="flex-1 py-1 border border-line rounded bg-bg-tertiary text-text-secondary cursor-pointer text-[10px] hover:text-text-primary hover:border-blue disabled:opacity-50"
-              disabled={mintBusy}
-              onClick={() => void mint(2)}
-            >
-              铸 USDT
-            </button>
-            <button
-              className="flex-1 py-1 border border-line rounded bg-bg-tertiary text-text-secondary cursor-pointer text-[10px] hover:text-text-primary hover:border-blue disabled:opacity-50"
-              disabled={mintBusy}
-              onClick={() => void mint(1)}
-            >
-              铸 ETH 测试币
-            </button>
-            <button
-              className="flex-1 py-1 border border-purple/40 rounded bg-purple/5 text-purple cursor-pointer text-[10px] hover:bg-ai-glow disabled:opacity-50"
-              disabled={mintBusy}
-              onClick={() => void deploy()}
-            >
-              部署合约
-            </button>
-          </div>
-          {mintMsg && <div className="mt-1.5 text-[10px] text-text-muted break-all">{mintMsg}</div>}
+          {isP4 ? (
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">USDCX</span>
+              <span className="font-mono">{balances.usdcx}</span>
+            </div>
+          ) : (
+            <>
+              <div className="flex justify-between text-[11px] mb-0.5">
+                <span className="text-text-muted">USDT</span>
+                <span className="font-mono">{balances.usdt}</span>
+              </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-text-muted">ETH</span>
+                <span className="font-mono">{balances.base}</span>
+              </div>
+              <div className="mt-2 flex gap-1.5 items-center">
+                <input
+                  type="text"
+                  value={mintAmount}
+                  onChange={(e) => setMintAmount(e.target.value)}
+                  className="w-20 bg-bg-tertiary border border-line text-text-primary px-1.5 py-1 rounded text-[10px] font-mono focus:border-blue focus:outline-none"
+                  placeholder="金额"
+                  title="铸币金额（下单锁仓需精确匹配 price×amount）"
+                />
+                <span className="text-[9px] text-text-muted">铸币金额（匹配下单锁仓）</span>
+              </div>
+              <div className="flex gap-1.5 mt-1.5">
+                <button
+                  className="flex-1 py-1 border border-line rounded bg-bg-tertiary text-text-secondary cursor-pointer text-[10px] hover:text-text-primary hover:border-blue disabled:opacity-50"
+                  disabled={mintBusy}
+                  onClick={() => void mint(2)}
+                >
+                  铸 USDT
+                </button>
+                <button
+                  className="flex-1 py-1 border border-line rounded bg-bg-tertiary text-text-secondary cursor-pointer text-[10px] hover:text-text-primary hover:border-blue disabled:opacity-50"
+                  disabled={mintBusy}
+                  onClick={() => void mint(1)}
+                >
+                  铸 ETH 测试币
+                </button>
+                <button
+                  className="flex-1 py-1 border border-purple/40 rounded bg-purple/5 text-purple cursor-pointer text-[10px] hover:bg-ai-glow disabled:opacity-50"
+                  disabled={mintBusy}
+                  onClick={() => void deploy()}
+                >
+                  部署合约
+                </button>
+              </div>
+              {mintMsg && <div className="mt-1.5 text-[10px] text-text-muted break-all">{mintMsg}</div>}
+            </>
+          )}
         </div>
       )}
       {/* 钱包已连接：只显示真实数据（无演示卡片） */}

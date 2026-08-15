@@ -14,11 +14,15 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// PooledOrder 链下提交的订单（Phase 2b 链下订单通道）：
-// Order 明文用于撮合；Ciphertext 是链上 Order record 密文，供结算时构造 settle。
+// PooledOrder 链下提交的订单（Phase 2b 链下订单通道 + Phase 4 真实币对）：
+// Order 明文用于撮合；Ciphertext 是链上 Order record（settle 消费）；
+// OpFund 是下单产出、operator 托管的资产 record 明文（买单=USDCX Token，卖单=ALEO credits）；
+// Creds 是 operator 的 USDCX 合规凭证（transfer_private_with_creds 用）。
 type PooledOrder struct {
 	Order      *match.Order `json:"order"`
-	Ciphertext string       `json:"ciphertext"` // Order record ciphertext（链上，settle 用）
+	Ciphertext string       `json:"ciphertext"` // Order record（链上，settle 输入）
+	OpFund     string       `json:"op_fund"`     // operator 托管资产 record 明文
+	Creds      string       `json:"credentials"` // operator USDCX 合规凭证 明文
 }
 
 // OrderPool 链下订单池：
@@ -31,6 +35,7 @@ type OrderPool struct {
 	ch          chan *PooledOrder       // 待撮合队列（FIFO）
 	records     map[int64]*OrderRecord  // order_id -> 订单状态记录（P3 委托列表）
 	trades      []*TradeRecord          // 成交明细（P3 成交记录，撮合回执时追加）
+	orders      map[int64]*PooledOrder  // order_id -> 全量订单（含托管资产/凭证，settle 用）
 }
 
 // NewOrderPool 创建订单池。
@@ -41,6 +46,7 @@ func NewOrderPool() *OrderPool {
 		ch:          make(chan *PooledOrder, 5000),
 		records:     make(map[int64]*OrderRecord),
 		trades:      make([]*TradeRecord, 0, 1024),
+		orders:      make(map[int64]*PooledOrder),
 	}
 }
 
@@ -62,6 +68,7 @@ func (p *OrderPool) Submit(o *PooledOrder) error {
 	}
 	p.pending[id] = o
 	p.ciphertexts[o.Order.OrderId] = o.Ciphertext
+	p.orders[o.Order.OrderId] = o
 	select {
 	case p.ch <- o:
 	default:
@@ -69,6 +76,14 @@ func (p *OrderPool) Submit(o *PooledOrder) error {
 		return fmt.Errorf("order pool full")
 	}
 	return nil
+}
+
+// GetOrder 按 OrderId 查订单（含托管资产/凭证，settlement 结算用）。
+func (p *OrderPool) GetOrder(orderID int64) (*PooledOrder, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	o, ok := p.orders[orderID]
+	return o, ok
 }
 
 // Orders 返回待撮合订单 channel（subscriber 消费）。
@@ -89,17 +104,21 @@ func (p *OrderPool) Complete(orderID uint64) {
 	delete(p.pending, orderID)
 }
 
-// HandleOrder 订单接收 API（Phase 2b 链下订单通道）：
-// POST /order，JSON 含订单明文字段 + Order record ciphertext（用户执行 place_order 后提交）。
-func HandleOrder(pool *OrderPool) http.HandlerFunc {
+// HandleOrder 订单接收 API（Phase 2b 链下订单通道 + p4 真实币对）：
+// POST /order，JSON 两种模式：
+//   - tx_id 模式（ALEO/USDCX p4，标准/隐私下单共用）：只传 {tx_id, symbol, trader}，
+//     引擎从链上交易提取 + view key 解密（ExtractAndDecryptOrder）
+//   - 明文字段模式（ETH/USDT p2 铸币兼容）：订单明文字段 + Order record ciphertext
+func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return
 		}
 		var req struct {
+			TxID       string `json:"tx_id"` // 链上下单交易 id（p4）；空则走明文字段模式
 			OrderId    int64  `json:"order_id"`
-			Symbol     string `json:"symbol"` // 交易对（ETH_USDT），可选；缺省时记录为空
+			Symbol     string `json:"symbol"` // 交易对（ALEO_USDCX），可选；缺省时记录为空
 			Side       int    `json:"side"`  // 0=buy, 1=sell
 			Price      string `json:"price"`
 			Amount     string `json:"amount"`
@@ -107,12 +126,36 @@ func HandleOrder(pool *OrderPool) http.HandlerFunc {
 			QuoteToken uint32 `json:"quote_token"`
 			Deadline   int64  `json:"deadline"`
 			Trader     string `json:"trader"`
-			Ciphertext string `json:"ciphertext"`
+			Ciphertext string `json:"ciphertext"` // Order record（settle 输入）
+			OpFund     string `json:"op_fund"`     // operator 托管资产 record 明文（买单=USDCX Token，卖单=ALEO credits）
+			Creds      string `json:"credentials"` // operator USDCX 合规凭证 明文
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+
+		// tx_id 模式：链上提取 + 解密（前端只提交 tx_id，订单参数全部来自链上 record）
+		if req.TxID != "" {
+			payload, err := ExtractAndDecryptOrder(rpc, req.TxID, programIDFor(req.Symbol))
+			if err != nil {
+				http.Error(w, "提取订单失败: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			o := payload.Order
+			o.Symbol = strings.TrimSpace(req.Symbol)
+			o.UserAddress = strings.TrimSpace(req.Trader)
+			if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: payload.OrderCT, OpFund: payload.OpFund, Creds: payload.Creds}); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			pool.RecordSubmit(o, strings.TrimSpace(req.Symbol))
+			common.Info("aleo order accepted (tx_id)", "order_id", o.OrderId, "side", o.BuyOrSell,
+				"price", o.Price.String(), "amount", o.UnfilledAmount.String(), "tx", req.TxID[:16])
+			w.Write([]byte("ok"))
+			return
+		}
+
 		price, err := decimal.NewFromString(req.Price)
 		if err != nil || price.Sign() <= 0 {
 			http.Error(w, "invalid price", http.StatusBadRequest)
@@ -140,7 +183,7 @@ func HandleOrder(pool *OrderPool) http.HandlerFunc {
 			CreateAt:       time.Now().UnixMilli(),
 			Deadline:       req.Deadline,
 		}
-		if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: req.Ciphertext}); err != nil {
+		if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: req.Ciphertext, OpFund: req.OpFund, Creds: req.Creds}); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

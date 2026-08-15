@@ -85,6 +85,20 @@ func (book *OrderBook) Find(orderId int64) *Order {
 	return book.cache[orderId]
 }
 
+// RebuildCache 从 BuySet/SellSet 重建 cache 索引。
+// gob 序列化只覆盖导出字段（cache 未导出，不参与编码），快照解码后必须重建，
+// 否则 Find/Dequeue 对盘口订单会 cache miss（Fatal: cached key is not in cache）。
+func (book *OrderBook) RebuildCache() {
+	book.cache = make(map[int64]*Order)
+	for _, set := range []*TreeSet{book.BuySet, book.SellSet} {
+		set.Each(func(_ int, v interface{}) {
+			if o, ok := v.(*Order); ok && o.OrderId > 0 {
+				book.cache[o.OrderId] = o
+			}
+		})
+	}
+}
+
 func (book *OrderBook) Cache() map[int64]*Order {
 	return book.cache
 }

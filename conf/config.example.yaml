@@ -159,7 +159,7 @@ chain:
   # ── Aleo 链后端（Leo/snarkVM，snarkOS REST；骨架阶段）──
   aleo:
     rpc-endpoint: "https://api.explorer.provable.com/v1"   # Aleo testnet（Provable explorer API）
-    program-id: "anubook_dex.aleo"
+    program-id: "anubook_dex_p4.aleo"
     private-key: ""                           # ENV: ALEO_PRIVATE_KEY
     settlement-batch-size: 100
     poll-interval-ms: 1000

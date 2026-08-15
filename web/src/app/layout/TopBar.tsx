@@ -19,7 +19,7 @@ import {
 const PAIRS = [
   { symbol: 'ETH/USDT', starred: true },
   { symbol: 'BTC/USDT', starred: true },
-  { symbol: 'ALEO/USDT', starred: false },
+  { symbol: 'ALEO/USDCX', starred: true },
 ]
 
 // 顶栏：对齐原型 #topbar（模式切换/交易对/Ticker/工具按钮/钱包）
@@ -38,6 +38,8 @@ export function TopBar() {
   const walletAddress = useWallet((s) => s.address)
   const walletConnect = useWallet((s) => s.connect)
   const walletDisconnect = useWallet((s) => s.disconnect)
+  const walletError = useWallet((s) => s.error)
+  const walletClearError = useWallet((s) => s.clearError)
   const [pairOpen, setPairOpen] = useState(false)
   const [walletOpen, setWalletOpen] = useState(false)
   const pairRef = useRef<HTMLDivElement>(null)
@@ -190,6 +192,17 @@ export function TopBar() {
         >
           {walletAddress ? `${truncateAddress(walletAddress)} ▾` : '连接钱包'}
         </button>
+        {walletError && (
+          <div className="absolute top-full right-0 mt-1 bg-bg-secondary border border-down/40 rounded-md min-w-[260px] max-w-[340px] z-50 shadow-dropdown">
+            <div className="px-3 py-2 text-[11px] text-down leading-relaxed break-all">{walletError}</div>
+            <div
+              className="px-3 pb-2 text-[10px] text-text-muted cursor-pointer hover:text-text-primary"
+              onClick={() => walletClearError()}
+            >
+              关闭
+            </div>
+          </div>
+        )}
         {walletOpen && walletAddress && (
           <div className="absolute top-full right-0 bg-bg-secondary border border-line rounded-md min-w-[220px] z-50 mt-1 shadow-dropdown">
             <div className="px-3.5 py-2.5 border-b border-line">

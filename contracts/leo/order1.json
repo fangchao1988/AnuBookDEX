@@ -1,0 +1,30 @@
+{
+  "config": {
+    "address": "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal",
+    "network": "testnet",
+    "endpoint": "https://api.explorer.provable.com/v1",
+    "consensus_version": 18
+  },
+  "program": "anubook_dex_p4.aleo",
+  "function": "place_order_buy",
+  "outputs": [
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  order_id: 2u128.private,\n  side: 0u8.private,\n  price: 15784u64.private,\n  amount: 63355300u64.private,\n  deadline: 18789244u32.private,\n  _nonce: 7756023592035278112952389447799547955293145112024686832632395352723860494682group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo1mnldqsfrwayzfep3t9zusu4y7yknsdhfwx76v5pajla35mrqn5xsvvurhy.private,\n  amount: 1000000u128.private,\n  sender: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  recipient: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  _nonce: 6562518552357617677993652006263140742414819459384945349872860388835597378527group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  amount: 0u128.private,\n  _nonce: 106504710523925920060401229461336163341235469589558611034820831545299962020group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  amount: 1000000u128.private,\n  _nonce: 3222778484700185568137618852070276499423778505477137806333828470790016818000group.public,\n  _version: 1u8.public\n}",
+    "{\n  owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private,\n  freeze_list_root: 3642222252059314292809609689035560016959342421640560347114299934615987159853field.private,\n  _nonce: 6011265526437777655735818760233466927479395185620032442199610822832186898024group.public,\n  _version: 1u8.public\n}",
+    "{\n  program_id: anubook_dex_p4.aleo,\n  function_name: place_order_buy,\n  arguments: [\n    {\n      program_id: test_usdcx_stablecoin.aleo,\n      function_name: transfer_private_with_creds,\n      arguments: [\n        3642222252059314292809609689035560016959342421640560347114299934615987159853field\n      ]\n    }\n  \n  ]\n}"
+  ],
+  "transaction_id": "at157y2d4ac8gtepgv30e24w2xg0j6j5d7gmflfms56y4t82dg6vs9sj9uugy",
+  "stats": {
+    "storage_cost": 5116,
+    "execution_cost": 490,
+    "priority_fee": 0,
+    "total_cost": 5606
+  },
+  "broadcast": {
+    "fee_id": "au17cypyu6mf4k4umwmuh5ur74q9cpplj6c74ear98v9w48vhtjgygse3wqg2",
+    "fee_transaction_id": "at133gr96uw2gglyemz4tat854xk9j7j92j0kape5vf56qdt5ftq5rssdxjm9",
+    "confirmed": true
+  }
+}

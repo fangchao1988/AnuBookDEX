@@ -28,15 +28,17 @@ const (
 )
 
 // TradeRecord 成交明细（P3 成交记录真实数据）：撮合回执时按 maker 成交逐笔记录。
+// 内部存储以撮合视角（Trader=maker，Side=maker 方向）；ListTrades 输出时按查询者视角翻转。
 type TradeRecord struct {
-	OrderId     int64  `json:"order_id"` // maker 订单
-	Symbol      string `json:"symbol"`
-	Side        string `json:"side"`   // maker 方向
-	Price       string `json:"price"`
-	Amount      string `json:"amount"`
-	Trader      string `json:"trader"` // maker 交易者
-	Taker       string `json:"taker"`  // taker 交易者
-	Ts          int64  `json:"ts"`
+	OrderId      int64  `json:"order_id"` // maker 订单
+	TakerOrderId int64  `json:"taker_order_id,omitempty"` // taker 订单（重结算用）
+	Symbol       string `json:"symbol"`
+	Side         string `json:"side"`   // maker 方向（内部）/ 查询者方向（API 输出）
+	Price        string `json:"price"`
+	Amount       string `json:"amount"`
+	Trader       string `json:"trader"` // maker 交易者（内部）/ 查询者（API 输出）
+	Taker        string `json:"taker"`  // taker 交易者（内部）/ 对手方（API 输出）
+	Ts           int64  `json:"ts"`
 	SettleStatus string `json:"settle_status"` // 链上结算状态（pending/settled/failed）
 }
 
@@ -114,6 +116,7 @@ func (p *OrderPool) RecordMatch(mrs []*match.MatchResult) {
 			}
 			p.trades = append(p.trades, &TradeRecord{
 				OrderId:      item.OrderId,
+				TakerOrderId: mr.OrderId,
 				Symbol:       mr.Symbol,
 				Side:         makerSide,
 				Price:        price,
@@ -171,6 +174,8 @@ func (p *OrderPool) UpdateTradeSettleStatus(orderId int64, status string) {
 }
 
 // ListTrades 查询成交记录（trader 匹配 maker 或 taker，symbol 过滤，倒序）。
+// 内部存储以撮合视角（Trader=maker，Side=maker 方向）；带 trader 查询时按查询者
+// 视角翻转：Side 恒为查询者自己的方向，Taker 恒为对手方（前端直接渲染）。
 func (p *OrderPool) ListTrades(trader, symbol string, limit int) []*TradeRecord {
 	if limit <= 0 || limit > 200 {
 		limit = 50
@@ -187,9 +192,32 @@ func (p *OrderPool) ListTrades(trader, symbol string, limit int) []*TradeRecord 
 			continue
 		}
 		cp := *t
+		// 查询者是 taker：Trader/Taker 对调，Side 取反（查询者自己的方向）
+		if trader != "" && cp.Taker == trader {
+			cp.Trader, cp.Taker = cp.Taker, cp.Trader
+			if cp.Side == "buy" {
+				cp.Side = "sell"
+			} else {
+				cp.Side = "buy"
+			}
+		}
 		out = append(out, &cp)
 		if len(out) >= limit {
 			break
+		}
+	}
+	return out
+}
+
+// ListFailedTrades 返回链上结算失败的成交（供 settlement 后台重结算扫描）。
+func (p *OrderPool) ListFailedTrades() []*TradeRecord {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]*TradeRecord, 0, len(p.trades))
+	for _, t := range p.trades {
+		if t.SettleStatus == SettleFailed {
+			cp := *t
+			out = append(out, &cp)
 		}
 	}
 	return out

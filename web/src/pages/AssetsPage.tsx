@@ -4,6 +4,7 @@ import { useMarket } from '../stores/marketStore'
 import { useMarketChannels } from '../hooks/useMarketChannels'
 import { formatNumber, dateTimeStr } from '../lib/format'
 import { fetchTrades, type TradeRecord } from '../lib/api/orders'
+import { scalePairValue } from '../lib/tokens'
 
 // ALEO 估值单价（USDT）：链上无 ALEO 行情源，暂用常量估算（标注估）
 const ALEO_PRICE = 0.5
@@ -25,7 +26,9 @@ export default function AssetsPage() {
   const usdt = num(balances?.usdt)
   const eth = num(balances?.base)
   const aleo = num(balances?.aleo)
-  const totalUsd = usdt + eth * ethPrice + aleo * ALEO_PRICE
+  const usdcx = num(balances?.usdcx)
+  // USDCX 为 USDT 计价测试稳定币，估值按 1:1
+  const totalUsd = usdt + eth * ethPrice + aleo * ALEO_PRICE + usdcx
 
   // 我的成交记录（引擎 /api/v1/trades，按钱包身份过滤）
   const [trades, setTrades] = useState<TradeRecord[]>([])
@@ -86,6 +89,11 @@ export default function AssetsPage() {
                 折合 $ {formatNumber(aleo * ALEO_PRICE, 2)} <span className="text-text-muted">(估)</span>
               </div>
             </div>
+            <div className="bg-bg-secondary border border-line rounded-lg p-4">
+              <div className="text-[11px] text-text-muted uppercase tracking-wide mb-1.5">USDCX 余额</div>
+              <div className="text-[22px] font-bold">{formatNumber(usdcx, 6)}</div>
+              <div className="text-[11px] text-text-secondary mt-1">折合 $ {formatNumber(usdcx, 2)}</div>
+            </div>
           </div>
 
           <h3 className="text-[15px] text-text-secondary mt-6 mb-3 border-b border-line pb-2">资产明细（链上）</h3>
@@ -119,11 +127,17 @@ export default function AssetsPage() {
                   <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(aleo * ALEO_PRICE, 2)}</td>
                   <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">credits.aleo（公开 + shielded）</td>
                 </tr>
+                <tr className="hover:bg-bg-hover">
+                  <td className="px-4 py-2 border-t border-line font-semibold">USDCX</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(usdcx, 6)}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(usdcx, 2)}</td>
+                  <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">test_usdcx_stablecoin（公开 + shielded）</td>
+                </tr>
               </tbody>
             </table>
           </div>
           <div className="mt-3 text-xs text-text-muted">
-            地址: <span className="font-mono text-text-secondary">{walletAddress}</span> · 余额来自链上 record 实时聚合，ETH 估值用实时行情价，ALEO 估值用常量价（估）
+            地址: <span className="font-mono text-text-secondary">{walletAddress}</span> · 余额来自链上 record 实时聚合，ETH 估值用实时行情价，ALEO 估值用常量价（估），USDCX 估值按 1:1 USDT
           </div>
 
           <h3 className="text-[15px] text-text-secondary mt-6 mb-3 border-b border-line pb-2">成交记录</h3>
@@ -153,8 +167,9 @@ export default function AssetsPage() {
                       <td className={`px-4 py-2 border-t border-line ${t.side === 'buy' ? 'text-up' : 'text-down'}`}>
                         {t.side === 'buy' ? '买入' : '卖出'}
                       </td>
-                      <td className="px-4 py-2 border-t border-line font-mono">{t.price}</td>
-                      <td className="px-4 py-2 border-t border-line font-mono">{t.amount}</td>
+                      {/* p4 真实币对（ALEO/USDCX）为 6 位最小单位，按币对精度换算为人类单位 */}
+                      <td className="px-4 py-2 border-t border-line font-mono">{scalePairValue(t.symbol, t.price)}</td>
+                      <td className="px-4 py-2 border-t border-line font-mono">{scalePairValue(t.symbol, t.amount)}</td>
                       <td className="px-4 py-2 border-t border-line font-mono text-text-muted">{t.taker.slice(0, 10)}…</td>
                     </tr>
                   ))

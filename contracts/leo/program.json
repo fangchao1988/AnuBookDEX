@@ -1,9 +1,22 @@
 {
-  "program": "anubook_dex_p2.aleo",
+  "program": "anubook_dex_p5.aleo",
   "version": "0.1.0",
   "description": "AnuBookDEX Aleo program - Phase 2 record privacy model",
   "license": "MIT",
   "leo": "4.4.0",
-  "dependencies": null,
+  "dependencies": [
+    {
+      "name": "test_usdcx_stablecoin.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    },
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "path": null,
+      "edition": null
+    }
+  ],
   "dev_dependencies": null
 }

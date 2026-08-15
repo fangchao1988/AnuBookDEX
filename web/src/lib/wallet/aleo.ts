@@ -4,6 +4,7 @@
 // - DevWallet：无钱包/本地联调降级（模拟地址 + 占位 ciphertext），保证 UI 全流程可走通。
 import type { AleoWallet, PlaceOrderParams, PlacedOrder, WalletBalances } from './types'
 import { ShieldWalletAdapter } from './shield'
+import { pairMode } from '../tokens'
 
 const DEV_ADDRESS = 'aleo1dev-wallet-placeholder'
 
@@ -52,7 +53,7 @@ export class LeoWalletAdapter implements AleoWallet {
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
     // 链上余额：requestRecords(program) 聚合 Token record（token_id 1=ETH, 2=USDT）
     // 注：需真钱包实测 record 结构与解密；当前返回占位
-    return { aleo: '--', usdt: '--', base: '--' }
+    return { aleo: '--', usdt: '--', base: '--', usdcx: '--' }
   }
 
   async mintToken(_tokenId: number, _amount: number): Promise<void> {
@@ -67,6 +68,11 @@ export class LeoWalletAdapter implements AleoWallet {
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
     if (!this.wallet?.requestTransaction) throw new Error('Leo Wallet 未暴露 requestTransaction()')
+    // p4 真实币对（ALEO/USDCX）需要跨程序 record 选择（USDCX Token+Credentials / credits），
+    // Leo Wallet 旧版 API 无法表达 filters，请使用 Shield 钱包
+    if (pairMode(params.symbol) === 'p4-real') {
+      throw new Error('ALEO/USDCX 下单请使用 Shield 钱包（Leo Wallet 不支持跨程序 record 选择）')
+    }
     // 1) 构建 place_order transition：fund Token record（requestRecords）+ 9 参数
     //    Transaction.createTransaction(publicKey, network, program, 'place_order', inputs, fee)
     // 2) requestTransaction 广播 -> txId
@@ -103,6 +109,20 @@ export class DevWallet implements AleoWallet {
   }
 
   async connect(): Promise<string> {
+    // 浏览器钱包扩展（Shield/Leo）的 content script 只在 localhost/127.0.0.1 与 HTTPS
+    // 页面注入（扩展安全设计，防止 HTTP 明文页面被中间人攻击注入钱包）。HTTP 外网
+    // 域名（如内网穿透）下检测不到 window.shield，会静默回退到本降级钱包并显示
+    // 占位地址——这里给出明确指引，避免误导。
+    if (
+      typeof window !== 'undefined' &&
+      window.location.protocol === 'http:' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1'
+    ) {
+      throw new Error(
+        '钱包扩展仅在 localhost 或 HTTPS 页面注入，HTTP 外网域名下无法使用。请改用 https:// 访问本页面（如 Cloudflare Tunnel / ngrok 等 HTTPS 隧道）后再连接钱包'
+      )
+    }
     this.address = DEV_ADDRESS
     return this.address
   }
@@ -112,7 +132,7 @@ export class DevWallet implements AleoWallet {
   }
 
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
-    return { aleo: '--', usdt: '128,456.78', base: '0.5234' }
+    return { aleo: '--', usdt: '128,456.78', base: '0.5234', usdcx: '--' }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
