@@ -20,7 +20,7 @@ import (
 // Creds 是 operator 的 USDCX 合规凭证（transfer_private_with_creds 用）。
 type PooledOrder struct {
 	Order      *match.Order `json:"order"`
-	Ciphertext string       `json:"ciphertext"` // Order record（链上，settle 输入）
+	Ciphertext string       `json:"ciphertext"`  // Order record（链上，settle 输入）
 	OpFund     string       `json:"op_fund"`     // operator 托管资产 record 明文
 	Creds      string       `json:"credentials"` // operator USDCX 合规凭证 明文
 }
@@ -119,14 +119,14 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			TxID       string `json:"tx_id"` // 链上下单交易 id（p4）；空则走明文字段模式
 			OrderId    int64  `json:"order_id"`
 			Symbol     string `json:"symbol"` // 交易对（ALEO_USDCX），可选；缺省时记录为空
-			Side       int    `json:"side"`  // 0=buy, 1=sell
+			Side       int    `json:"side"`   // 0=buy, 1=sell
 			Price      string `json:"price"`
 			Amount     string `json:"amount"`
 			BaseToken  uint32 `json:"base_token"`
 			QuoteToken uint32 `json:"quote_token"`
 			Deadline   int64  `json:"deadline"`
 			Trader     string `json:"trader"`
-			Ciphertext string `json:"ciphertext"` // Order record（settle 输入）
+			Ciphertext string `json:"ciphertext"`  // Order record（settle 输入）
 			OpFund     string `json:"op_fund"`     // operator 托管资产 record 明文（买单=USDCX Token，卖单=ALEO credits）
 			Creds      string `json:"credentials"` // operator USDCX 合规凭证 明文
 		}

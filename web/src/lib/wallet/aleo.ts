@@ -66,6 +66,11 @@ export class LeoWalletAdapter implements AleoWallet {
     throw new Error('Leo Wallet 部署未实现，请使用 Shield 钱包')
   }
 
+  async getCredentials(): Promise<void> {
+    // Leo Wallet 旧版：get_credentials 支持待实测（Shield 已实现）
+    throw new Error('Leo Wallet 领取凭证未实现，请使用 Shield 钱包')
+  }
+
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
     if (!this.wallet?.requestTransaction) throw new Error('Leo Wallet 未暴露 requestTransaction()')
     // p4 真实币对（ALEO/USDCX）需要跨程序 record 选择（USDCX Token+Credentials / credits），
@@ -150,6 +155,10 @@ export class DevWallet implements AleoWallet {
   async deployProgram(): Promise<string> {
     // Dev 模式模拟部署
     return 'dev-deploy-placeholder'
+  }
+
+  async getCredentials(): Promise<void> {
+    // Dev 模式模拟领取凭证（无链上操作）
   }
 }
 

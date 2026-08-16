@@ -265,72 +265,108 @@ export class ShieldWalletAdapter implements AleoWallet {
     const priceU = toUnits(params.price, 6)
     const amountU = toUnits(params.amount, 6)
     if (priceU <= 0n || amountU <= 0n) throw new Error('价格/数量无效')
-    // 下单前隐私余额预检：executeTransaction 的 record auto-fill 失败只报
-    // "No record matching constraints"，不带余额数据，无法定位是余额不足还是
-    // record 状态（pending/已花费）问题。这里用 requestRecords 自检，报错带出
-    // 钱包实际可见的 record 金额列表。
+    // 隐私 record 选择：不依赖钱包 auto-fill（filters 匹配在钱包扩展上不可靠，
+    // 实测报 "No record matching constraints"），改为 requestRecords 拿 record
+    // 列表 -> 挑金额足够的最大 record -> 用规范定义的 uid 精确定位（uid 与
+    // filters 互斥；旧钱包无 uid 时回退 filters）。
+    // p5 合约无自动 join，单条 record 必须覆盖锁定金额（多 record 合计不足时
+    // 提示用户先 join 合并）。
     if (params.side === 0) {
       const needed = (priceU * amountU) / 1000000n
       const recs = await this.adapter.requestRecords(USDCX_PROGRAM_ID, true, 'unspent')
       const tokenRecs = recs.filter((r) => recordIs(r, 'Token'))
       const total = tokenRecs.reduce<number>((s, r) => s + extractField(r, 'amount'), 0)
-      if (total < Number(needed)) {
-        const list = tokenRecs.map((r) => extractField(r, 'amount')).join(', ')
+      // 挑单条金额足够的最大 Token record（uid 优先）
+      let best: { uid?: string; amount: number } | null = null
+      for (const r of tokenRecs) {
+        const amt = extractField(r, 'amount')
+        if (amt >= Number(needed) && (!best || amt > best.amount)) {
+          best = { uid: (r as { uid?: string }).uid, amount: amt }
+        }
+      }
+      if (!best) {
         throw new Error(
-          `隐私 USDCX 余额不足：${tokenRecs.length} 条 Token record 共 ${(total / 1e6).toFixed(6)} USDCX` +
-            `（${list || '无记录'} 微单位），买单需锁定 ${(Number(needed) / 1e6).toFixed(6)} USDCX`
+          `隐私 USDCX 不足：共 ${(total / 1e6).toFixed(6)} USDCX（${tokenRecs.length} 条 record），` +
+            `买单需单条 record 锁定 ${(Number(needed) / 1e6).toFixed(6)} USDCX` +
+            (total >= Number(needed) ? '；多条 record 需先 join 合并' : '')
         )
       }
-    } else {
-      const recs = await this.adapter.requestRecords('credits.aleo', true, 'unspent')
-      const amounts = recs.map((r) => extractField(r, 'microcredits'))
-      const total = amounts.reduce((s, n) => s + n, 0)
-      if (total < Number(amountU)) {
+      const tokenReq: TransactionInput = best.uid
+        ? { type: 'record', program: USDCX_PROGRAM_ID, recordname: 'Token', uid: best.uid }
+        : {
+            type: 'record',
+            program: USDCX_PROGRAM_ID,
+            recordname: 'Token',
+            filters: { amount: { gte: `${Number(needed)}u128` } },
+          }
+      // 合规凭证同样 requestRecords + uid 精确定位（auto-fill 在钱包扩展上
+      // 不可靠，Token 用 uid 解决后只剩 Credentials 仍失败——同一根因）
+      const credsRecs = recs.filter((r) => recordIs(r, 'Credentials'))
+      if (credsRecs.length === 0) {
         throw new Error(
-          `隐私 ALEO 余额不足：${recs.length} 条 credits record 共 ${total / 1e6} ALEO` +
-            `（${amounts.join(', ') || '无记录'} microcredits），卖单需锁定 ${Number(amountU) / 1e6} ALEO`
+          `未找到合规凭证 Credentials record（共 ${recs.length} 条 record，无 Credentials）——` +
+            `需先用 test_usdcx_stablecoin 的 get_credentials 领取合规凭证`
         )
+      }
+      const credsUid = (credsRecs[0] as { uid?: string }).uid
+      const credsReq: TransactionInput = credsUid
+        ? { type: 'record', program: USDCX_PROGRAM_ID, recordname: 'Credentials', uid: credsUid }
+        : { type: 'record', program: USDCX_PROGRAM_ID, recordname: 'Credentials' }
+      const inputs: TransactionInput[] = [
+        tokenReq,
+        credsReq,
+        `${params.orderId}u128`,
+        `${priceU}u64`,
+        `${amountU}u64`,
+        `${params.deadline}u32`,
+        operator,
+      ]
+      const onchainId = await this.executeAndAwait({
+        program: PROGRAM_ID_P4,
+        function: 'place_order_buy',
+        inputs,
+        fee: 0, // Shield 覆盖 gas 模式；p4 费用模式待实测
+      })
+      return { txId: onchainId, ciphertext: '' }
+    }
+
+    // 卖单：credits record 挑 microcredits 足够的最大 record
+    const recs = await this.adapter.requestRecords('credits.aleo', true, 'unspent')
+    const total = recs.reduce<number>((s, r) => s + extractField(r, 'microcredits'), 0)
+    let best: { uid?: string; micro: number } | null = null
+    for (const r of recs) {
+      const micro = extractField(r, 'microcredits')
+      if (micro >= Number(amountU) && (!best || micro > best.micro)) {
+        best = { uid: (r as { uid?: string }).uid, micro }
       }
     }
-    const inputs: TransactionInput[] =
-      params.side === 0
-        ? [
-            {
-              type: 'record',
-              program: USDCX_PROGRAM_ID,
-              recordname: 'Token',
-              // p5 合约断言 fund.amount >= (price*amount)/1e6（多出部分找零回用户），
-              // 用 gte 过滤让钱包自动选金额足够的 record（否则可能选中金额不足的
-              // 小 record 导致链上断言失败）；join 合并的大额 record 同样满足
-              filters: { amount: { gte: `${(priceU * amountU) / 1000000n}u128` } },
-            },
-            // 合规凭证（get_credentials 产出；多凭证场景钱包选首个，MVP 单凭证）
-            { type: 'record', program: USDCX_PROGRAM_ID, recordname: 'Credentials' },
-            `${params.orderId}u128`,
-            `${priceU}u64`,
-            `${amountU}u64`,
-            `${params.deadline}u32`,
-            operator,
-          ]
-        : [
-            {
-              type: 'record',
-              program: 'credits.aleo',
-              recordname: 'credits',
-              // p5 合约断言 fund.microcredits >= amount（多出部分找零回用户），
-              // 用 gte 过滤让钱包自动选金额足够的 record
-              filters: { microcredits: { gte: `${amountU}u64` } },
-            },
-            `${params.orderId}u128`,
-            `${priceU}u64`,
-            `${amountU}u64`,
-            `${params.deadline}u32`,
-            operator,
-          ]
+    if (!best) {
+      const amounts = recs.map((r) => extractField(r, 'microcredits'))
+      throw new Error(
+        `隐私 ALEO 不足：共 ${total / 1e6} ALEO（${recs.length} 条 record：${amounts.join(', ') || '无'} microcredits），` +
+          `卖单需单条 record 锁定 ${Number(amountU) / 1e6} ALEO` +
+          (total >= Number(amountU) ? '；多条 record 需先 autojoin 合并' : '')
+      )
+    }
+    const creditsReq: TransactionInput = best.uid
+      ? { type: 'record', program: 'credits.aleo', recordname: 'credits', uid: best.uid }
+      : {
+          type: 'record',
+          program: 'credits.aleo',
+          recordname: 'credits',
+          filters: { microcredits: { gte: `${Number(amountU)}u64` } },
+        }
     const onchainId = await this.executeAndAwait({
       program: PROGRAM_ID_P4,
-      function: params.side === 0 ? 'place_order_buy' : 'place_order_sell',
-      inputs,
+      function: 'place_order_sell',
+      inputs: [
+        creditsReq,
+        `${params.orderId}u128`,
+        `${priceU}u64`,
+        `${amountU}u64`,
+        `${params.deadline}u32`,
+        operator,
+      ],
       fee: 0, // Shield 覆盖 gas 模式；p4 费用模式待实测
     })
     return { txId: onchainId, ciphertext: '' }
@@ -353,6 +389,24 @@ export class ShieldWalletAdapter implements AleoWallet {
       await new Promise((r) => setTimeout(r, 2000))
     }
     throw new Error('等待链上确认超时（120s），请稍后查询委托状态')
+  }
+
+  // 领取 USDCX 合规凭证：test_usdcx_stablecoin get_credentials + 非包含证明。
+  // proof 是 freezelist 树（仅哨兵叶子、root 固定）的通用非包含证明：leaf_index=1,1
+  // 触发断言短路（signer 区间检查被 leaf0==leaf1 短路），对任意地址有效；
+  // 链上实测（operator 广播）accepted+confirmed，finalize root 校验通过。
+  // 树状态变化（update_freeze_list）后需重新生成（当前 MVP 树固定）。
+  private static readonly CREDENTIALS_PROOF =
+    '[{siblings: [0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field], leaf_index: 1u32}, {siblings: [0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field, 0field], leaf_index: 1u32}]'
+
+  async getCredentials(): Promise<void> {
+    if (!this.adapter) throw new Error('Shield 钱包未连接')
+    await this.executeAndAwait({
+      program: USDCX_PROGRAM_ID,
+      function: 'get_credentials',
+      inputs: [ShieldWalletAdapter.CREDENTIALS_PROOF],
+      fee: 0, // Shield 覆盖 gas 模式
+    })
   }
 
   // 铸测试币：mint(amount: u64, token_id: u32)，Token record 归执行者（合约 main.leo）

@@ -97,7 +97,17 @@ func (s *Settlement) SubmitBatch(symbol string, mrs []*match.MatchResult) (strin
 			// 结算开始即回执 settling（前端显示"结算中"，不再一直 pending；
 			// leo execute 单次耗时数十秒，状态可见性对用户体感重要）
 			s.pool.UpdateTradeSettleStatus(item.OrderId, SettleSettling)
-			if err := s.executeSettle(buyPO.Ciphertext, sellPO.Ciphertext, sellPO.OpFund, buyPO.OpFund, buyPO.Creds, price, amount); err != nil {
+			// settle 的合规凭证：transfer_private_with_creds 的 Credentials 输出保持原
+			// owner（用户），operator view key 解不了、settle 也 spend 不了用户凭证；
+			// 合规校验只看 freeze_list_root 不校验 owner——统一用 operator 自有凭证
+			// （chain.aleo.operator-credentials，operator 领一次后固定，settle 复用）
+			creds := config.GetString("chain.aleo.operator-credentials", "")
+			if creds == "" {
+				common.Error("aleo settlement: operator-credentials 未配置（需 operator 先领凭证）", "maker", item.OrderId)
+				s.pool.UpdateTradeSettleStatus(item.OrderId, SettleFailed)
+				continue
+			}
+			if err := s.executeSettle(buyPO.Ciphertext, sellPO.Ciphertext, sellPO.OpFund, buyPO.OpFund, creds, price, amount); err != nil {
 				common.Error("aleo settlement: settle failed",
 					"maker", item.OrderId, "taker", takerID, "err", err)
 				// 结算状态回执（前端展示）

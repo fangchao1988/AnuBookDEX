@@ -16,9 +16,28 @@ export function PositionsPanel() {
   const balances = useWallet((s) => s.balances)
   const walletMint = useWallet((s) => s.mintToken)
   const walletDeploy = useWallet((s) => s.deployProgram)
+  const walletGetCredentials = useWallet((s) => s.getCredentials)
   const [mintBusy, setMintBusy] = useState(false)
   const [mintMsg, setMintMsg] = useState('')
   const [mintAmount, setMintAmount] = useState('100000')
+  const [credsBusy, setCredsBusy] = useState(false)
+  const [credsMsg, setCredsMsg] = useState('')
+
+  // 领取 USDCX 合规凭证（get_credentials + freezelist 非包含证明）。
+  // p5 隐私买单需要 Credentials record，无凭证报 "No record matching constraints"；
+  // 领取后凭证归当前钱包地址，requestRecords 可见，即可正常下单
+  const getCredentials = async () => {
+    setCredsBusy(true)
+    setCredsMsg('')
+    try {
+      await walletGetCredentials()
+      setCredsMsg('凭证已领取（链上确认），可正常下单买入')
+    } catch (e) {
+      setCredsMsg(e instanceof Error ? `领取失败: ${e.message}` : '领取失败')
+    } finally {
+      setCredsBusy(false)
+    }
+  }
 
   // 部署合约：Shield executeDeployment（钱包 prover + ALEO 付部署费）
   const deploy = async () => {
@@ -65,10 +84,23 @@ export function PositionsPanel() {
             <span className="font-mono">{balances.aleo}</span>
           </div>
           {isP4 ? (
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">USDCX</span>
-              <span className="font-mono">{balances.usdcx}</span>
-            </div>
+            <>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-text-muted">USDCX</span>
+                <span className="font-mono">{balances.usdcx}</span>
+              </div>
+              {/* 隐私买单需要合规凭证（Credentials record）；无凭证下单选不到 record 报
+                  "No record matching constraints"。领取一次凭证即可持续下单（凭证在
+                  place_order 转账时重新铸回用户，不消耗） */}
+              <button
+                className="w-full mt-2 py-1 border border-cyan/40 rounded bg-cyan/5 text-cyan cursor-pointer text-[10px] hover:bg-cyan/10 disabled:opacity-50"
+                disabled={credsBusy}
+                onClick={() => void getCredentials()}
+              >
+                {credsBusy ? '领取中（链上确认约 30-60s）…' : '领取合规凭证（下单买入需凭证）'}
+              </button>
+              {credsMsg && <div className={`mt-1 text-[9px] ${credsMsg.startsWith('领取失败') ? 'text-down' : 'text-up'}`}>{credsMsg}</div>}
+            </>
           ) : (
             <>
               <div className="flex justify-between text-[11px] mb-0.5">

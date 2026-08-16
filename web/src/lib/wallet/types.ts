@@ -39,6 +39,8 @@ export interface AleoWallet {
   mintToken(tokenId: number, amount: number): Promise<void>
   // 部署合约（Shield executeDeployment，用户 ALEO 付部署费；dev 模拟返回占位 txId）
   deployProgram(): Promise<string>
+  // 领取 USDCX 合规凭证（test_usdcx_stablecoin get_credentials；凭证归签名者，dev 模拟）
+  getCredentials(): Promise<void>
 }
 
 // 引擎 operator 地址（Order record owner；生产由链配置提供，本地联调占位）

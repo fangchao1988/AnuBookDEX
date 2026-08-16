@@ -15,6 +15,7 @@ interface WalletState {
   refreshBalances: (baseSymbol: string) => Promise<void>
   mintToken: (tokenId: number, amount: number) => Promise<void>
   deployProgram: () => Promise<string>
+  getCredentials: () => Promise<void>
 }
 
 const wallet = createWallet()
@@ -83,5 +84,12 @@ export const useWallet = create<WalletState>()((set, get) => ({
     // 部署后刷新余额（部署费已扣）
     await get().refreshBalances('ETH')
     return txId
+  },
+
+  getCredentials: async () => {
+    // 领取合规凭证：链上 get_credentials，凭证 record 归签名者（用户钱包）。
+    // 完成后刷新余额（requestRecords 现在能看到 Credentials + 新 Token 找零）
+    await wallet.getCredentials()
+    await get().refreshBalances('ETH')
   },
 }))

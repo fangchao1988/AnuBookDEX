@@ -129,9 +129,15 @@ func ExtractAndDecryptOrder(rpc *RESTClient, txID, programID string) (*OrderPayl
 			return nil, fmt.Errorf("decrypt op_fund: %w", err)
 		}
 	}
+	// 凭证（Credentials）归下单用户而非 operator（transfer_private_with_creds 输出保持
+	// 原 owner），operator view key 解密必失败——降级不阻塞：settle 统一使用 operator
+	// 自有凭证（chain.aleo.operator-credentials），不依赖本字段。
 	if payload.Creds != "" {
-		if payload.Creds, err = decryptRecord(payload.Creds, vk); err != nil {
-			return nil, fmt.Errorf("decrypt credentials: %w", err)
+		if plain, derr := decryptRecord(payload.Creds, vk); derr != nil {
+			common.Warn("aleo extract: credentials belongs to user (owner != operator), skip decrypt", "err", truncateBytes([]byte(derr.Error()), 120))
+			payload.Creds = ""
+		} else {
+			payload.Creds = plain
 		}
 	}
 	return payload, nil
