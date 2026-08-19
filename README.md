@@ -122,11 +122,12 @@ runner.StartMatcher ◀── chain.OrderSource ──────┘
 
 ### Aleo 链 DEX 流程（隐私 DeFi 核心链路）
 
-1. **链上托管下单**：钱包执行 Leo 合约（`anubook_dex_p5.aleo`）`place_order_buy` / `place_order_sell`——Order record（加密，归 operator）+ 托管资产（买单锁 USDCX Token + 合规凭证 Credentials，卖单锁 ALEO credits）+ 找零，订单参数只在链上加密 record 中
+1. **链上托管下单**：钱包执行 Leo 合约（`anubook_dex_p7.aleo`）——**公开下单** `place_order_buy/sell_public`（operator 公开托管，order 记录写公开 mapping）+ **隐私下单** `place_order_buy/sell_private`（Order record 加密、资产 record 托管：买单锁 USDCX Token + 合规凭证 Credentials，卖单锁 ALEO credits），订单参数只在链上加密 record 中
 2. **引擎提取解密**：前端只提交 `tx_id`；引擎从链上交易提取 record ciphertext，用 operator view key 解密出订单参数与托管资产
-3. **链下撮合**：与集中式共享的订单簿/撮合核心（价格-时间优先），订单簿以加密视角隔离，对手方不可见明文
-4. **链上结算**：引擎 shell out `leo execute settle <maker_ct> <taker_ct> <托管资产> <凭证> <price> <amount> --broadcast`——Order record 一次性消费、资产原子互换；带 3 次重试 + "already exists" 幂等判定 + 30s 后台重结算循环
-5. **行情**：K线/深度/成交通过 WebSocket 实时广播
+3. **链下撮合**：与集中式共享的订单簿/撮合核心（价格-时间优先），订单簿以加密视角隔离，对手方不可见明文；`public_orders` mapping 记录公开单状态（waiting/filled/cancelled）供结算校验
+4. **链上结算（两阶段，4 种组合按托管形态路由）**：`settle_pp`（公开×公开）/ `settle_vp`（隐私买×公开卖）/ `settle_pv`（公开买×隐私卖）/ `settle_vv`（双隐私）——operator 先直调公开转账（credits/USDCX `transfer_public`），再调 settle transition 完成隐私 record 互换并置 `public_orders.status=1`；带链上 mapping 校验（不轻信广播返回）+ 10s 后台重结算循环
+5. **撤单（4 变体）**：`cancel_buy/sell_public/private` 按托管形态全额退回
+6. **行情**：K线/深度/成交通过 WebSocket 实时广播
 
 合约源码在 `contracts/leo/`（Leo 语言，`--no-local` 链上版本构建证明）。
 
@@ -225,6 +226,10 @@ AnuBookDEX/
 | Aleo | 2 | 链上托管下单 + tx_id 提取解密（view key） | ✅ 完成 |
 | Aleo | 3 | 链下撮合 + 链上 settle 结算（幂等/重试/后台重结算） | ✅ 完成 |
 | Aleo | 4 | 前端钱包下单（Shield 标准/隐私模式，ALEO/USDCX E2E 已跑通） | ✅ 完成 |
+| Aleo | 5 | p5 差分 settle 组合（4 组合路由：pp/vp/pv/vv） | ✅ 完成 |
+| Aleo | 6 | p6 撤单 4 变体（公开/隐私 + 前置退回） | ✅ 完成 |
+| Aleo | 7 | p7 两阶段公开/隐私混合下单（4 下单 × 4 settle × 4 撤单；链上 mapping 校验 + 10s 重结算循环） | ✅ 完成 |
+| Aleo | 8 | operator 凭证轮换修复（UTXO 单次消费 → 结算后自动捕获新凭证 + 状态文件持久化） | ✅ 完成 |
 | 后续 | 5+ | 暗池 MPC / ZK-KYC / RocketSwap / NFT | 待实施 |
 
 ## 关键依赖

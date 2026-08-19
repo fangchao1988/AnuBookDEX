@@ -15,8 +15,9 @@ import { fetchAleoBalance, fetchOperatorAddress, fetchUsdcxPublicBalance } from 
 import { pairMode } from '../tokens'
 
 export const PROGRAM_ID = 'anubook_dex_p2.aleo'
-// p4 真实币对（ALEO/USDCX）：跨程序托管（USDCX Token + credits.aleo）
-export const PROGRAM_ID_P4 = 'anubook_dex_p5.aleo'
+// p4 真实币对（ALEO/USDCX）p6 合约：公开/隐私混合下单
+// （place_order_*_public 公开余额托管 / place_order_*_private record 托管 + trader）
+export const PROGRAM_ID_P4 = 'anubook_dex_p7.aleo'
 export const USDCX_PROGRAM_ID = 'test_usdcx_stablecoin.aleo'
 
 // 解析 Aleo 类型化字符串（'123u64' -> 123；'2u32' -> 2；'1262u128.private' -> 1262；
@@ -126,9 +127,11 @@ export class ShieldWalletAdapter implements AleoWallet {
 
     // ALEO 公开余额（无需钱包授权，链上公开数据）
     let aleo = 0
+    let aleoPublic = 0
     try {
       const pub = await fetchAleoBalance(this.address)
       aleo += pub.aleo
+      aleoPublic = pub.aleo
     } catch (e) {
       if (import.meta.env.DEV) console.log('[shield] public balance query failed:', e)
     }
@@ -169,8 +172,10 @@ export class ShieldWalletAdapter implements AleoWallet {
     // USDCX：公开余额（balances mapping）+ 隐私 Token records（p4 真实币对 quote；
     // 6 位最小单位 -> 人类单位），与 ALEO 同模式（公开 + 私有总额）
     let usdcx = 0
+    let usdcxPublic = 0
     try {
-      usdcx += await fetchUsdcxPublicBalance(this.address)
+      usdcxPublic = await fetchUsdcxPublicBalance(this.address)
+      usdcx += usdcxPublic
     } catch (e) {
       if (import.meta.env.DEV) console.log('[shield] usdcx public balance query failed:', e)
     }
@@ -192,6 +197,8 @@ export class ShieldWalletAdapter implements AleoWallet {
       usdt: sum[2] !== undefined ? String(sum[2]) : '--',
       base: sum[1] !== undefined ? String(sum[1]) : '--',
       usdcx: usdcx > 0 ? String(usdcx / 1e6) : '--',
+      aleoPublic: aleoPublic > 0 ? String(Math.round(aleoPublic * 1e6) / 1e6) : '--',
+      usdcxPublic: usdcxPublic > 0 ? String(usdcxPublic / 1e6) : '--',
     }
   }
 
@@ -265,11 +272,55 @@ export class ShieldWalletAdapter implements AleoWallet {
     const priceU = toUnits(params.price, 6)
     const amountU = toUnits(params.amount, 6)
     if (priceU <= 0n || amountU <= 0n) throw new Error('价格/数量无效')
-    // 隐私 record 选择：不依赖钱包 auto-fill（filters 匹配在钱包扩展上不可靠，
+
+    // p6 标准（公开）下单——两阶段：
+    // 1) 钱包先直调 transfer_public 把公开余额托管给 operator（await 外部
+    //    transfer_public 的 finalize 在 testnet 不可行——finalize 输入错位实测
+    //    rejected，转账必须作为独立交易由签名者直调）
+    // 2) 钱包调 place_order_*_public（合约只记 public_orders mapping）
+    // 纯公开参数、无 record 输入、无需 requestRecords/uid。
+    // 引擎收到 tx_id 后按明文模式入簿（公开参数链上透明，无需 view key 解密）。
+    if (params.mode === 'standard') {
+      const fn = params.side === 0 ? 'place_order_buy_public' : 'place_order_sell_public'
+      // 步骤 1：公开余额托管（买单锁 USDCX = price*amount/1e6；卖单锁 ALEO = amount）
+      if (params.side === 0) {
+        const needed = (priceU * amountU) / 1000000n
+        await this.executeAndAwait({
+          program: USDCX_PROGRAM_ID,
+          function: 'transfer_public',
+          inputs: [operator, `${needed}u128`],
+          fee: 0,
+        })
+      } else {
+        await this.executeAndAwait({
+          program: 'credits.aleo',
+          function: 'transfer_public',
+          inputs: [operator, `${amountU}u64`],
+          fee: 0,
+        })
+      }
+      // 步骤 2：合约记账（mapping 写入）
+      const onchainId = await this.executeAndAwait({
+        program: PROGRAM_ID_P4,
+        function: fn,
+        inputs: [
+          `${params.orderId}u128`,
+          `${priceU}u64`,
+          `${amountU}u64`,
+          `${params.deadline}u32`,
+          operator,
+        ],
+        fee: 0, // Shield 覆盖 gas 模式；p6 费用模式待实测
+      })
+      return { txId: onchainId, ciphertext: '' }
+    }
+
+    // 隐私（record 托管）下单：place_order_buy_private / place_order_sell_private
+    // record 选择：不依赖钱包 auto-fill（filters 匹配在钱包扩展上不可靠，
     // 实测报 "No record matching constraints"），改为 requestRecords 拿 record
     // 列表 -> 挑金额足够的最大 record -> 用规范定义的 uid 精确定位（uid 与
     // filters 互斥；旧钱包无 uid 时回退 filters）。
-    // p5 合约无自动 join，单条 record 必须覆盖锁定金额（多 record 合计不足时
+    // 合约无自动 join，单条 record 必须覆盖锁定金额（多 record 合计不足时
     // 提示用户先 join 合并）。
     if (params.side === 0) {
       const needed = (priceU * amountU) / 1000000n
@@ -323,7 +374,7 @@ export class ShieldWalletAdapter implements AleoWallet {
       ]
       const onchainId = await this.executeAndAwait({
         program: PROGRAM_ID_P4,
-        function: 'place_order_buy',
+        function: 'place_order_buy_private',
         inputs,
         fee: 0, // Shield 覆盖 gas 模式；p4 费用模式待实测
       })
@@ -358,7 +409,7 @@ export class ShieldWalletAdapter implements AleoWallet {
         }
     const onchainId = await this.executeAndAwait({
       program: PROGRAM_ID_P4,
-      function: 'place_order_sell',
+      function: 'place_order_sell_private',
       inputs: [
         creditsReq,
         `${params.orderId}u128`,

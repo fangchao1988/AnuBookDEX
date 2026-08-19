@@ -130,9 +130,43 @@ export async function submitPrivacyOrder(req: {
   }
 }
 
-// 统一 tx_id 下单（p4 真实币对 ALEO/USDCX，标准/隐私下单共用）：
+// p6 标准（公开）下单：钱包广播 place_order_*_public 后提交明文字段
+// （公开参数链上透明，无需引擎提取解密；mode=public 标记公开托管路径）
+export async function submitPublicOrder(req: {
+  order_id: number
+  symbol: string
+  side: number
+  price: string
+  amount: string
+  deadline: number
+  trader: string
+}): Promise<AleoOrderResult> {
+  try {
+    const res = await fetch('/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: req.order_id,
+        symbol: req.symbol,
+        side: req.side,
+        price: req.price,
+        amount: req.amount,
+        deadline: req.deadline,
+        trader: req.trader,
+        mode: 'public',
+      }),
+    })
+    const text = await res.text()
+    if (res.ok) return { ok: true }
+    return { ok: false, error: text || `HTTP ${res.status}` }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+// 统一 tx_id 下单（p4 真实币对 ALEO/USDCX 隐私下单）：
 // 前端只提交链上交易 id（订单参数全部在链上加密 record 中），
-// 引擎从交易提取 + operator view key 解密（POST /order tx_id 模式）
+// 引擎从交易提取 + operator view key 解密（POST /order tx_id 模式，默认 mode=private）
 export async function submitTxOrder(req: {
   tx_id: string
   symbol: string

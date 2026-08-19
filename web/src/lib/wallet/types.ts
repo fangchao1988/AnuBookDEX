@@ -11,6 +11,9 @@ export interface PlaceOrderParams {
   quoteToken: number
   deadline: number // 秒
   operator: string // Order record owner（引擎 operator 地址）
+  // p6 下单路径：standard=公开余额托管（place_order_*_public，无 record 输入）；
+  // privacy=record 托管（place_order_*_private，uid 精确定位 record）。缺省 privacy
+  mode?: 'standard' | 'privacy'
 }
 
 export interface PlacedOrder {
@@ -19,10 +22,22 @@ export interface PlacedOrder {
 }
 
 export interface WalletBalances {
-  aleo: string // ALEO（public + shielded）
+  aleo: string // ALEO 总余额（public + shielded）
   usdt: string // anubook_dex_p2 Token record（测试币）
   base: string // base 币种（ETH）Token record
-  usdcx: string // test_usdcx_stablecoin Token record（p4 真实币对 quote，6 位最小单位）
+  usdcx: string // USDCX 总余额（public + shielded，6 位最小单位换算后）
+  // p6 公开余额（标准下单用：公开余额 -> transfer_public 托管，无需 record/凭证）
+  aleoPublic: string // 公开 ALEO（credits.aleo account mapping）
+  usdcxPublic: string // 公开 USDCX（balances mapping）
+}
+
+// 隐私余额 = 总余额 - 公开余额：钱包层只聚合总量与公开量，
+// 隐私（record 托管）余额由差值导出，供隐私/暗池下单模式展示。
+// 返回 '--' 表示无可展示余额（0 或数据缺失）。
+export function privateBalance(total: string | undefined, pub: string | undefined): string {
+  const toNum = (v?: string) => (v && v !== '--' ? Number(String(v).replace(/,/g, '')) : 0)
+  const priv = toNum(total) - toNum(pub)
+  return priv > 0 ? String(Math.round(priv * 1e6) / 1e6) : '--'
 }
 
 export interface AleoWallet {

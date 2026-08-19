@@ -3,11 +3,13 @@ import { useSettings } from '../../stores/settings'
 import { useWallet } from '../../stores/wallet'
 import { toChannelSymbol } from '../../lib/symbol'
 import { pairMode } from '../../lib/tokens'
+import { privateBalance } from '../../lib/wallet/types'
 
 // 持仓列表：对齐原型 #positions-panel（现货卡片 + 杠杆卡片 + 风险条）
 // P3：钱包连接后展示链上余额（requestRecords 聚合），未连接展示演示数据
 export function PositionsPanel() {
   const tradingMode = useSettings((s) => s.tradingMode)
+  const privacyMode = useSettings((s) => s.privacyMode)
   const isPerp = tradingMode === 'perp'
   // p4 真实币对（ALEO/USDCX）：余额只显示 ALEO 与 USDCX，不显示 p2 铸币（ETH/USDT）
   const pair = useSettings((s) => s.pair)
@@ -78,30 +80,58 @@ export function PositionsPanel() {
       </div>
       {walletAddress && balances && (
         <div className="px-2.5 py-2 border-b border-line bg-bg-tertiary/50">
-          <div className="text-[10px] text-text-muted mb-1">钱包余额</div>
-          <div className="flex justify-between text-[11px] mb-0.5">
-            <span className="text-text-muted">ALEO</span>
-            <span className="font-mono">{balances.aleo}</span>
+          {/* p6 标准（公开）下单用公开余额（transfer_public 托管），隐私下单用隐私 record；
+              余额区随下单模式切换，避免误读余额 */}
+          <div className="flex justify-between items-baseline mb-1">
+            <span className="text-[10px] text-text-muted">
+              {isP4
+                ? privacyMode === 'standard'
+                  ? '钱包公开余额（标准下单用）'
+                  : '钱包隐私余额（隐私下单用）'
+                : '钱包余额'}
+            </span>
           </div>
-          {isP4 ? (
+          {isP4 && privacyMode === 'standard' ? (
             <>
-              <div className="flex justify-between text-[11px]">
-                <span className="text-text-muted">USDCX</span>
-                <span className="font-mono">{balances.usdcx}</span>
+              <div className="flex justify-between text-[11px] mb-0.5">
+                <span className="text-text-muted">ALEO（公开）</span>
+                <span className="font-mono">{balances.aleoPublic}</span>
               </div>
+              <div className="flex justify-between text-[11px]">
+                <span className="text-text-muted">USDCX（公开）</span>
+                <span className="font-mono">{balances.usdcxPublic}</span>
+              </div>
+              <div className="mt-1.5 text-[9px] text-text-muted leading-tight">
+                标准下单使用公开余额锁仓，无需凭证/record；隐私下单请切换到「隐私」模式
+              </div>
+            </>
+          ) : (
+            <>
+              {/* p6 隐私/暗池下单用 record 托管：显示隐私余额（总 - 公开），
+                  公开余额不可用于隐私下单（transfer_private 无公开输入） */}
+              <div className="flex justify-between text-[11px] mb-0.5">
+                <span className="text-text-muted">ALEO（隐私）</span>
+                <span className="font-mono">{privateBalance(balances.aleo, balances.aleoPublic)}</span>
+              </div>
+              <div className="flex justify-between text-[11px] mb-0.5">
+                <span className="text-text-muted">USDCX（隐私）</span>
+                <span className="font-mono">{privateBalance(balances.usdcx, balances.usdcxPublic)}</span>
+              </div>
+              <div className="text-[9px] text-text-muted mb-1">隐私余额（不含公开，隐私下单用）</div>
               {/* 隐私买单需要合规凭证（Credentials record）；无凭证下单选不到 record 报
                   "No record matching constraints"。领取一次凭证即可持续下单（凭证在
                   place_order 转账时重新铸回用户，不消耗） */}
               <button
-                className="w-full mt-2 py-1 border border-cyan/40 rounded bg-cyan/5 text-cyan cursor-pointer text-[10px] hover:bg-cyan/10 disabled:opacity-50"
+                className="w-full mt-1 py-1 border border-cyan/40 rounded bg-cyan/5 text-cyan cursor-pointer text-[10px] hover:bg-cyan/10 disabled:opacity-50"
                 disabled={credsBusy}
                 onClick={() => void getCredentials()}
               >
-                {credsBusy ? '领取中（链上确认约 30-60s）…' : '领取合规凭证（下单买入需凭证）'}
+                {credsBusy ? '领取中（链上确认约 30-60s）…' : '领取合规凭证（隐私买单需凭证）'}
               </button>
               {credsMsg && <div className={`mt-1 text-[9px] ${credsMsg.startsWith('领取失败') ? 'text-down' : 'text-up'}`}>{credsMsg}</div>}
             </>
-          ) : (
+          )}
+          {!isP4 && (
             <>
               <div className="flex justify-between text-[11px] mb-0.5">
                 <span className="text-text-muted">USDT</span>

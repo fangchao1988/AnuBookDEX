@@ -6,7 +6,16 @@ import { toDecimal } from '../../lib/decimal'
 import { formatNumber } from '../../lib/format'
 import { toChannelSymbol } from '../../lib/symbol'
 import { pairMode, pairTokens } from '../../lib/tokens'
-import { nextOrderId, submitAleoOrder, submitPrivacyOrder, submitTxOrder } from '../../lib/api/orders'
+import { nextOrderId, submitAleoOrder, submitPrivacyOrder, submitPublicOrder, submitTxOrder } from '../../lib/api/orders'
+import { privateBalance } from '../../lib/wallet/types'
+
+// 人类单位 -> 6 位最小单位（BigInt，与隐私路径链上 record 单位一致）
+function toUnits6(v: string): bigint {
+  const n = v.replace(/,/g, '').trim()
+  const [int, frac = ''] = n.split('.')
+  const scale = 10n ** 6n
+  return BigInt(int) * scale + BigInt((frac + '000000').slice(0, 6) || '0')
+}
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '../../stores/wallet'
 
@@ -143,6 +152,9 @@ export function OrderForm() {
           quoteToken: tokens.quote,
           deadline: Math.floor(Date.now() / 1000) + 3600,
           operator: '',
+          // p6：标准模式走公开余额托管（place_order_*_public，无 record 输入），
+          // 隐私模式走 record 托管（place_order_*_private，uid 定位）
+          mode: isP4 ? (privacyMode === 'standard' ? 'standard' : 'privacy') : undefined,
         })
         placedTxId = placed.txId
         ciphertext = placed.ciphertext
@@ -162,7 +174,18 @@ export function OrderForm() {
     }
 
     const res = isP4
-      ? await submitTxOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
+      ? privacyMode === 'standard'
+        ? await submitPublicOrder({
+            order_id: orderId,
+            symbol: channelSymbol,
+            side: direction === 'long' ? 0 : 1,
+            // 明文提交须与链上/撮合单位一致：6 位最小单位（0.016 -> 16000，1 -> 1000000）
+            price: toUnits6(priceVal).toString(),
+            amount: toUnits6(amountVal).toString(),
+            deadline: Math.floor(Date.now() / 1000) + 3600,
+            trader,
+          })
+        : await submitTxOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
       : privacyMode === 'privacy'
         ? await submitPrivacyOrder({ tx_id: placedTxId, symbol: channelSymbol, trader })
         : await submitAleoOrder({
@@ -188,8 +211,16 @@ export function OrderForm() {
   const isPerp = tradingMode === 'perp'
   //const balance = isPerp ? '15,133.45 USDT' : '128,456.78 USDT'
   const balances = useWallet((s) => s.balances)
-  // quote 余额：p4 真实币对用 USDCX（test_usdcx_stablecoin Token），p2 用 USDT
-  const quoteBalance = pairMode(toChannelSymbol(pair)) === 'p4-real' ? balances?.usdcx ?? '--' : balances?.usdt ?? '--'
+  const isP4 = pairMode(toChannelSymbol(pair)) === 'p4-real'
+  // 余额按下单模式区分（p4 真实币对）：
+  // - 标准 tab：显示公开余额（transfer_public 托管，无需 record/凭证）
+  // - 隐私/暗池 tab：显示隐私余额（record 托管，总 - 公开）
+  // p2 铸币币对无公开/隐私之分（Token record 唯一形态），各 tab 一致
+  const quoteBalance = !isP4
+    ? balances?.usdt ?? '--'
+    : privacyMode === 'standard'
+      ? balances?.usdcxPublic ?? '--'
+      : privateBalance(balances?.usdcx, balances?.usdcxPublic)
   // 强平价估算：liq = entry * (1 - 1/lev)（对齐原型 updateLiquidationEstimate，decimal 精确计算）
   const liqPrice = useMemo(() => {
     const entry = toDecimal(68245)
@@ -204,7 +235,9 @@ export function OrderForm() {
   return (
     <div className="bg-bg-secondary border-r border-line p-3 border-b border-line">
       <div className="flex justify-between mb-2.5 text-xs">
-        <span className="text-text-muted">{isPerp ? '账户权益' : '钱包余额'}</span>
+        <span className="text-text-muted">
+          {isPerp ? '账户权益' : isP4 ? (privacyMode === 'standard' ? '钱包余额 · 公开' : '钱包余额 · 隐私') : '钱包余额'}
+        </span>
         <span className="text-text-primary font-semibold">{quoteBalance} {quote}</span>
       </div>
 

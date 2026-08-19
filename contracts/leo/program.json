@@ -1,7 +1,7 @@
 {
-  "program": "anubook_dex_p5.aleo",
+  "program": "anubook_dex_p7.aleo",
   "version": "0.1.0",
-  "description": "AnuBookDEX Aleo program - Phase 2 record privacy model",
+  "description": "AnuBookDEX Aleo program - Phase 7 two-stage public/private hybrid orders",
   "license": "MIT",
   "leo": "4.4.0",
   "dependencies": [

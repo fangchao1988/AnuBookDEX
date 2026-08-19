@@ -5,6 +5,7 @@ import { useMarketChannels } from '../hooks/useMarketChannels'
 import { formatNumber, dateTimeStr } from '../lib/format'
 import { fetchTrades, type TradeRecord } from '../lib/api/orders'
 import { scalePairValue } from '../lib/tokens'
+import { privateBalance } from '../lib/wallet/types'
 
 // ALEO 估值单价（USDT）：链上无 ALEO 行情源，暂用常量估算（标注估）
 const ALEO_PRICE = 0.5
@@ -101,7 +102,7 @@ export default function AssetsPage() {
             <table className="w-full border-collapse text-[13px]">
               <thead>
                 <tr>
-                  {['币种', '余额', '折合 USDT', '来源'].map((h) => (
+                  {['币种', '总余额', '公开', '隐私', '折合 USDT', '来源'].map((h) => (
                     <th key={h} className="bg-bg-tertiary text-text-muted font-normal px-4 py-2 text-left text-[11px]">
                       {h}
                     </th>
@@ -112,11 +113,15 @@ export default function AssetsPage() {
                 <tr className="hover:bg-bg-hover">
                   <td className="px-4 py-2 border-t border-line font-semibold">USDT</td>
                   <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(usdt, 2)}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono text-text-muted">--</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(usdt, 2)}</td>
                   <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(usdt, 2)}</td>
                   <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">anubook_dex_p2 Token record</td>
                 </tr>
                 <tr className="hover:bg-bg-hover">
                   <td className="px-4 py-2 border-t border-line font-semibold">ETH</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(eth, 4)}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono text-text-muted">--</td>
                   <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(eth, 4)}</td>
                   <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(eth * ethPrice, 2)}</td>
                   <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">anubook_dex_p2 Token record</td>
@@ -124,14 +129,18 @@ export default function AssetsPage() {
                 <tr className="hover:bg-bg-hover">
                   <td className="px-4 py-2 border-t border-line font-semibold">ALEO</td>
                   <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(aleo, 2)}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{balances?.aleoPublic !== '--' ? formatNumber(num(balances?.aleoPublic), 2) : '--'}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{privateBalance(balances?.aleo, balances?.aleoPublic)}</td>
                   <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(aleo * ALEO_PRICE, 2)}</td>
-                  <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">credits.aleo（公开 + shielded）</td>
+                  <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">credits.aleo（公开 mapping + shielded）</td>
                 </tr>
                 <tr className="hover:bg-bg-hover">
                   <td className="px-4 py-2 border-t border-line font-semibold">USDCX</td>
                   <td className="px-4 py-2 border-t border-line font-mono">{formatNumber(usdcx, 6)}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{balances?.usdcxPublic !== '--' ? formatNumber(num(balances?.usdcxPublic), 6) : '--'}</td>
+                  <td className="px-4 py-2 border-t border-line font-mono">{privateBalance(balances?.usdcx, balances?.usdcxPublic)}</td>
                   <td className="px-4 py-2 border-t border-line font-mono">$ {formatNumber(usdcx, 2)}</td>
-                  <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">test_usdcx_stablecoin（公开 + shielded）</td>
+                  <td className="px-4 py-2 border-t border-line text-[11px] text-text-muted">test_usdcx_stablecoin（balances mapping + shielded）</td>
                 </tr>
               </tbody>
             </table>

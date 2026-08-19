@@ -14,15 +14,18 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-// PooledOrder 链下提交的订单（Phase 2b 链下订单通道 + Phase 4 真实币对）：
+// PooledOrder 链下提交的订单（Phase 2b 链下订单通道 + Phase 4 真实币对 + Phase 6 公开/隐私混合）：
 // Order 明文用于撮合；Ciphertext 是链上 Order record（settle 消费）；
 // OpFund 是下单产出、operator 托管的资产 record 明文（买单=USDCX Token，卖单=ALEO credits）；
-// Creds 是 operator 的 USDCX 合规凭证（transfer_private_with_creds 用）。
+// Creds 是 operator 的 USDCX 合规凭证（transfer_private_with_creds 用）；
+// Mode 是下单路径：public（标准下单=公开余额托管，public_orders mapping，结算走 settle_pp/vp/pv）
+// 或 private（隐私下单=record 托管，Order record 加密，结算走 settle_vv）。
 type PooledOrder struct {
 	Order      *match.Order `json:"order"`
 	Ciphertext string       `json:"ciphertext"`  // Order record（链上，settle 输入）
 	OpFund     string       `json:"op_fund"`     // operator 托管资产 record 明文
 	Creds      string       `json:"credentials"` // operator USDCX 合规凭证 明文
+	Mode       string       `json:"mode"`        // "public" | "private"（结算路由 + 撤单路由）
 }
 
 // OrderPool 链下订单池：
@@ -62,8 +65,9 @@ func (p *OrderPool) Submit(o *PooledOrder) error {
 		return fmt.Errorf("order %d already submitted", o.Order.OrderId)
 	}
 	// 生产模式要求 Order record ciphertext（结算用）；本地联调可关闭
-	// （chain.aleo.require-ciphertext=false，前端先接订单通道、钱包后续接）
-	if o.Ciphertext == "" && config.GetBool("chain.aleo.require-ciphertext", true) {
+	// （chain.aleo.require-ciphertext=false，前端先接订单通道、钱包后续接）。
+	// 公开下单（mode=public）无 Order record（public_orders mapping 记账），跳过校验
+	if o.Ciphertext == "" && o.Mode != "public" && config.GetBool("chain.aleo.require-ciphertext", true) {
 		return fmt.Errorf("order %d missing ciphertext", o.Order.OrderId)
 	}
 	p.pending[id] = o
@@ -116,7 +120,7 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			return
 		}
 		var req struct {
-			TxID       string `json:"tx_id"` // 链上下单交易 id（p4）；空则走明文字段模式
+			TxID       string `json:"tx_id"` // 链上下单交易 id（p4/p6 隐私）；空则走明文字段模式
 			OrderId    int64  `json:"order_id"`
 			Symbol     string `json:"symbol"` // 交易对（ALEO_USDCX），可选；缺省时记录为空
 			Side       int    `json:"side"`   // 0=buy, 1=sell
@@ -126,6 +130,7 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			QuoteToken uint32 `json:"quote_token"`
 			Deadline   int64  `json:"deadline"`
 			Trader     string `json:"trader"`
+			Mode       string `json:"mode"` // "public"（标准=公开余额托管）| "private"（隐私=record 托管，默认）
 			Ciphertext string `json:"ciphertext"`  // Order record（settle 输入）
 			OpFund     string `json:"op_fund"`     // operator 托管资产 record 明文（买单=USDCX Token，卖单=ALEO credits）
 			Creds      string `json:"credentials"` // operator USDCX 合规凭证 明文
@@ -135,7 +140,7 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			return
 		}
 
-		// tx_id 模式：链上提取 + 解密（前端只提交 tx_id，订单参数全部来自链上 record）
+		// tx_id 模式：链上提取 + 解密（隐私下单：前端只提交 tx_id，订单参数全部来自链上加密 record）
 		if req.TxID != "" {
 			payload, err := ExtractAndDecryptOrder(rpc, req.TxID, programIDFor(req.Symbol))
 			if err != nil {
@@ -145,7 +150,7 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			o := payload.Order
 			o.Symbol = strings.TrimSpace(req.Symbol)
 			o.UserAddress = strings.TrimSpace(req.Trader)
-			if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: payload.OrderCT, OpFund: payload.OpFund, Creds: payload.Creds}); err != nil {
+			if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: payload.OrderCT, OpFund: payload.OpFund, Creds: payload.Creds, Mode: "private"}); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
@@ -183,13 +188,17 @@ func HandleOrder(pool *OrderPool, rpc *RESTClient) http.HandlerFunc {
 			CreateAt:       time.Now().UnixMilli(),
 			Deadline:       req.Deadline,
 		}
-		if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: req.Ciphertext, OpFund: req.OpFund, Creds: req.Creds}); err != nil {
+		mode := strings.TrimSpace(req.Mode)
+		if mode == "" {
+			mode = "private" // 默认隐私（p2/p5 兼容路径）
+		}
+		if err := pool.Submit(&PooledOrder{Order: o, Ciphertext: req.Ciphertext, OpFund: req.OpFund, Creds: req.Creds, Mode: mode}); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		// P3：订单状态记录（委托列表数据源）
 		pool.RecordSubmit(o, strings.TrimSpace(req.Symbol))
-		common.Info("aleo order accepted", "order_id", req.OrderId, "side", bs, "price", price.String(), "amount", amount.String())
+		common.Info("aleo order accepted", "order_id", req.OrderId, "side", bs, "price", price.String(), "amount", amount.String(), "mode", mode)
 		w.Write([]byte("ok"))
 	}
 }

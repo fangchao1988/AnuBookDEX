@@ -53,7 +53,7 @@ export class LeoWalletAdapter implements AleoWallet {
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
     // 链上余额：requestRecords(program) 聚合 Token record（token_id 1=ETH, 2=USDT）
     // 注：需真钱包实测 record 结构与解密；当前返回占位
-    return { aleo: '--', usdt: '--', base: '--', usdcx: '--' }
+    return { aleo: '--', usdt: '--', base: '--', usdcx: '--', aleoPublic: '--', usdcxPublic: '--' }
   }
 
   async mintToken(_tokenId: number, _amount: number): Promise<void> {
@@ -137,7 +137,9 @@ export class DevWallet implements AleoWallet {
   }
 
   async getBalances(_baseSymbol: string): Promise<WalletBalances> {
-    return { aleo: '--', usdt: '128,456.78', base: '0.5234', usdcx: '--' }
+    // 联调占位：公开/隐私拆分模拟（ALEOS 总 80 = 公开 50 + 隐私 30；USDCX 总 200 = 公开 120 + 隐私 80），
+    // 与真实钱包聚合口径一致（隐私 = 总 - 公开）
+    return { aleo: '80.00', usdt: '128,456.78', base: '0.5234', usdcx: '200.00', aleoPublic: '50.00', usdcxPublic: '120.00' }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {

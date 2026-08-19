@@ -190,6 +190,12 @@ func BatchMatchResult(result []byte, ch chan []byte, num int) []byte {
 
 // 是否 匹配成功
 func matchAble(order *Order, oppoOrder *Order) bool {
+	// DEX 模式 order_id（=SeqId）由客户端生成，跨客户端时钟漂移会导致新订单 SeqId
+	// 小于簿内对手单（价格-时间优先被破坏）——此时不撮合、直接挂单（matchOrder 内
+	// 的 SeqId 断言会 FATAL 杀掉整个引擎，必须先在这里拦住）
+	if order.SeqId <= oppoOrder.SeqId {
+		return false
+	}
 	if order.BuyOrSell == Buy {
 		return order.Price.GreaterThanOrEqual(oppoOrder.Price)
 	} else {

@@ -68,9 +68,22 @@ func decryptRecord(ciphertext, viewKey string) (string, error) {
 	return string(out), nil
 }
 
-// parseRecordPlaintext 解析 leo decrypt 输出（{ field: valueu64.private, ... }）
+// unquoteJSON 剥离 GET /mapping 返回的 JSON string wrapper（外层引号 + \\n 字面转义，
+// 例如 `"{\n  status: 1u8\n}"`），还原为真实换行的 Leo plaintext。
+// 失败时原样返回（decrypt 输出本就是真实换行，无 wrapper）。
+func unquoteJSON(s string) string {
+	var out string
+	if err := json.Unmarshal([]byte(s), &out); err == nil {
+		return out
+	}
+	return s
+}
+
+// parseRecordPlaintext 解析 leo decrypt 输出（{ field: valueu64.private, ... }）与
+// node mapping 明文（{ field: valueu64, ... }，无 .private 后缀）两种格式。
+// 调用方须先用 unquoteJSON 还原 JSON wrapper（否则 `status: 1u8\n}` 的 `\` 终止不了字段）。
 func parseRecordPlaintext(plain string) map[string]int64 {
-	re := regexp.MustCompile(`(\w+):\s*([0-9]+)u(?:64|128|32|8)\.`)
+	re := regexp.MustCompile(`(\w+):\s*([0-9]+)u(?:64|128|32|8)[.,}\s]`)
 	fields := make(map[string]int64)
 	for _, m := range re.FindAllStringSubmatch(plain, -1) {
 		if v, err := strconv.ParseInt(m[2], 10, 64); err == nil {

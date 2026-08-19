@@ -51,7 +51,7 @@ func operatorViewKey() string {
 
 // ExtractAndDecryptOrder 从链上交易提取并解密下单产出：
 //  1. GetTransaction(txID)
-//  2. 定位 dex transition（program=programID，function=place_order_buy/sell）
+//  2. 定位 dex transition（program=programID，function=place_order_buy_private/sell_private）
 //  3. Order CT = dex transition 首个 record output（Order 是唯一本体 record，其余为 external_record）
 //  4. 托管资产/凭证在跨程序 inner transition 的 record outputs（record 本体在 inner）：
 //     buy:  transfer_private_with_creds outputs[2]=Token托管、[3]=Credentials
@@ -85,7 +85,7 @@ func ExtractAndDecryptOrder(rpc *RESTClient, txID, programID string) (*OrderPayl
 	// 托管资产/合规凭证：跨程序调用以 inner transition 形式出现在 execution.transitions
 	payload := &OrderPayload{OrderCT: orderCT}
 	switch function {
-	case "place_order_buy":
+	case "place_order_buy_private":
 		recs, err := recordOutputsOf(transitions, usdcxProgramID, "transfer_private_with_creds")
 		if err != nil {
 			return nil, err
@@ -94,7 +94,7 @@ func ExtractAndDecryptOrder(rpc *RESTClient, txID, programID string) (*OrderPayl
 			return nil, fmt.Errorf("transfer_private_with_creds records=%d, want 4", len(recs))
 		}
 		payload.OpFund, payload.Creds = recs[2], recs[3] // Token托管 + Credentials
-	case "place_order_sell":
+	case "place_order_sell_private":
 		recs, err := recordOutputsOf(transitions, creditsProgramID, "transfer_private")
 		if err != nil {
 			return nil, err
@@ -107,7 +107,7 @@ func ExtractAndDecryptOrder(rpc *RESTClient, txID, programID string) (*OrderPayl
 		payload.OpFund = recs[0] // credits 托管
 	default:
 		// p2 铸币兼容（place_order）：仅提取 Order record，无托管资产/凭证
-		common.Debug("aleo extract: function not p4 buy/sell (p2 place_order?)", "function", function)
+		common.Debug("aleo extract: function not p7 private buy/sell (p2 place_order?)", "function", function)
 	}
 
 	// 解密（operator view key；Order/托管资产/凭证的 owner 均为 operator）
