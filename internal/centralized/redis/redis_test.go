@@ -27,8 +27,3 @@ func ExampleClient() {
 	t := ms2 - ms
 	log.Println(t / 1e6)
 }
-
-func ExampleRedisConnect() {
-
-
-}

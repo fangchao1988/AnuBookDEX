@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/AnuBookDEX/engine/internal/core/match"
 	"github.com/AnuBookDEX/engine/internal/infra/common"
@@ -98,13 +99,12 @@ func executeCancel(s *Settlement, po *PooledOrder, rec *OrderRecord) error {
 		}, 0, 0); err != nil {
 			return fmt.Errorf("cancel_buy_public 前置 USDCX 退回: %w", err)
 		}
-		_, err := s.executeTransition("cancel_buy_public", []string{
+		return cancelTx(s, "cancel_buy_public", []string{
 			strconv.FormatInt(rec.OrderId, 10) + "u128",
 			rec.Trader,
 			operator,
 			strconv.FormatInt(needed, 10) + "u128",
-		}, 0, 0)
-		return err
+		}, rec.OrderId)
 	case po.Mode == "public" && po.Order.BuyOrSell == match.Sell:
 		// cancel_sell_public(order_id, user, operator, amount)：ALEO 公开退回（两阶段）
 		amount, _ := decimal.NewFromString(rec.Amount)
@@ -114,13 +114,12 @@ func executeCancel(s *Settlement, po *PooledOrder, rec *OrderRecord) error {
 		}, 0, 0); err != nil {
 			return fmt.Errorf("cancel_sell_public 前置 credits 退回: %w", err)
 		}
-		_, err := s.executeTransition("cancel_sell_public", []string{
+		return cancelTx(s, "cancel_sell_public", []string{
 			strconv.FormatInt(rec.OrderId, 10) + "u128",
 			rec.Trader,
 			operator,
 			strconv.FormatInt(amount.IntPart(), 10) + "u64",
-		}, 0, 0)
-		return err
+		}, rec.OrderId)
 	case po.Mode == "private" && po.Order.BuyOrSell == match.Buy:
 		// cancel_buy_private(OrderCT, op_usdcx, creds)：USDCX record 退回用户
 		if po.Ciphertext == "" || po.OpFund == "" {
@@ -136,6 +135,13 @@ func executeCancel(s *Settlement, po *PooledOrder, rec *OrderRecord) error {
 			creds,
 		}, 0, 0)
 		if err != nil {
+			// 广播 already-exists：链上已撤（并发/重试重放），幂等成功。
+			// 注意：不从这里轮换凭证——重放 tx 的输出凭证是随机 seed 构造的幻影
+			// （从未上链，见幻影凭证教训）；真正的新凭证已由首次成功广播的 handler 轮换。
+			if strings.Contains(err.Error(), "already exists") {
+				common.Info("aleo cancel: cancel_buy_private already on-chain (idempotent)", "order", rec.OrderId)
+				return nil
+			}
 			return err
 		}
 		// cancel_buy_private 消费 operator 凭证（transfer_private_with_creds），成功后轮换
@@ -146,12 +152,61 @@ func executeCancel(s *Settlement, po *PooledOrder, rec *OrderRecord) error {
 		if po.Ciphertext == "" || po.OpFund == "" {
 			return fmt.Errorf("隐私卖单缺少结算材料（Order CT/托管 credits）")
 		}
-		_, err := s.executeTransition("cancel_sell_private", []string{
+		return cancelTx(s, "cancel_sell_private", []string{
 			po.Ciphertext,
 			po.OpFund,
-		}, 0, 0)
-		return err
+		}, 0)
 	default:
 		return fmt.Errorf("unknown order mode: %q", po.Mode)
 	}
+}
+
+// cancelTx 执行撤单 transition 并处理幂等与链上确认：
+//   - 广播失败且报 already-exists：不直接定论。公开撤单查 public_orders.status==2
+//     （final 已生效才算真撤，与 settle 的 already-exists 误判教训一致——可能只是
+//     内存池 pending）；隐私撤单无公开 mapping 可验证，already-exists 视为已撤
+//     （撤单是终态操作，重放幂等）
+//   - 广播成功：公开撤单仍查链上 status==2（final 可能被拒）
+//
+// verifyOrderID<=0（隐私撤单）时只能以广播结果为准。
+func cancelTx(s *Settlement, fn string, args []string, verifyOrderID int64) error {
+	_, txErr := s.executeTransition(fn, args, 0, 0)
+	if txErr == nil {
+		if verifyOrderID > 0 {
+			if verr := s.verifyPublicOrderCanceled(verifyOrderID); verr != nil {
+				return fmt.Errorf("%s broadcast ok but on-chain verify failed: %w", fn, verr)
+			}
+		}
+		return nil
+	}
+	if !strings.Contains(txErr.Error(), "already exists") {
+		return txErr
+	}
+	if verifyOrderID > 0 {
+		// 公开撤单：查链上最终状态——明确 status=2 才放行
+		if verr := s.verifyPublicOrderCanceled(verifyOrderID); verr != nil {
+			return fmt.Errorf("%s already-exists but on-chain status not cancelled: %w", fn, verr)
+		}
+		common.Info("aleo cancel: "+fn+" already on-chain (idempotent)", "order_id", verifyOrderID)
+		return nil
+	}
+	// 隐私撤单无 mapping 可验证：already-exists 视为已撤（终态操作，重放幂等）
+	common.Info("aleo cancel: " + fn + " already on-chain (idempotent, private)")
+	return nil
+}
+
+// verifyPublicOrderCanceled 查链上 public_orders[orderID].status==2（撤单 final 已生效）。
+func (s *Settlement) verifyPublicOrderCanceled(orderID int64) error {
+	key := fmt.Sprintf("%dfield", orderID)
+	raw, err := s.rpc.GetProgramMapping(s.programID, "public_orders", key)
+	if err != nil {
+		return fmt.Errorf("query public_orders[%d]: %w", orderID, err)
+	}
+	// GET /mapping 返回 JSON string wrapper（字面 \n），先 unquoteJSON 再解析
+	fields := parseRecordPlaintext(unquoteJSON(raw))
+	if fields["status"] != 2 {
+		return fmt.Errorf("public_orders[%d].status=%d，want 2（撤单 final 未生效）；mapping=%s",
+			orderID, fields["status"], truncateBytes([]byte(raw), 400))
+	}
+	return nil
 }

@@ -41,6 +41,19 @@ export function pairDecimals(symbol: string): number {
   return pairMode(symbol) === 'p4-real' ? 6 : 0
 }
 
+// 下单表单默认价格（切交易对时重置；数量保持用户输入不变）：
+// p4 真实币对 ALEO/USDCX 默认 0.016 USDCX（≈ 链上 16000 微单位，对齐历史成交价），
+// p2 铸币币对保留 ETH/USDT 时代默认 1800.00
+export const DEFAULT_PRICES: Record<string, string> = {
+  ETH_USDT: '1800.00',
+  BTC_USDT: '1800.00',
+  ALEO_USDCX: '0.016',
+}
+
+export function defaultPairPrice(symbol: string): string {
+  return DEFAULT_PRICES[symbol] ?? '0.016'
+}
+
 // 最小单位 -> 人类单位（行情/委托显示用；p2 原样返回）
 export function scalePairValue(symbol: string, value: unknown): string {
   const d = pairDecimals(symbol)

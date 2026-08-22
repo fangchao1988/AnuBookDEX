@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { useTrade } from './trade'
+import { toChannelSymbol } from '../lib/symbol'
+import { defaultPairPrice } from '../lib/tokens'
 
 export type TradingMode = 'spot' | 'perp'
 export type Direction = 'long' | 'short'
@@ -46,7 +49,12 @@ export const useSettings = create<SettingsState>()((set) => ({
   setDirection: (direction) => set({ direction }),
   setOrderType: (orderType) => set({ orderType }),
   setPrivacyMode: (privacyMode) => set({ privacyMode }),
-  setPair: (pair) => set({ pair }),
+  // 切换交易对时重置默认价格（ALEO/USDCX=0.016，ETH/USDT=1800.00）；
+  // 数量保持用户输入不变（默认 1.0000 由 trade store 持有）
+  setPair: (pair) => {
+    set({ pair })
+    useTrade.getState().setPrice(defaultPairPrice(toChannelSymbol(pair)))
+  },
   setLeverage: (leverage) => set({ leverage }),
   setMarginMode: (marginMode) => set({ marginMode }),
   toggleSimpleMode: () => set((s) => ({ simpleMode: !s.simpleMode })),

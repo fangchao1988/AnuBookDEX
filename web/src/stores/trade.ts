@@ -15,7 +15,7 @@ interface TradeState {
 }
 
 export const useTrade = create<TradeState>()((set) => ({
-  price: '1800.00',
+  price: '0.016', // ALEO/USDCX 默认价格（0.016 USDCX，p4 6 位精度 = 16000 微单位）；切交易对由 settings.setPair 重置
   amount: '1.0000',
   stopPrice: '',
   tp: '',

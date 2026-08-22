@@ -284,71 +284,6 @@ func TestResultEqual(t *testing.T) {
 	}
 }
 
-func ExampleMatchFilled1() {
-	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 24, 200)
-	order2 := testMatchCreateOrderFor(2, 3, Sell, Limit, Submitted, 23, 200)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "btcetc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-}
-func ExampleMatchPartFilled0() {
-	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 24, 200)
-	order2 := testMatchCreateOrderFor(2, 3, Sell, Limit, Submitted, 23, 180)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "btcetc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-}
-
-func ExampleMatchPartFilled1() {
-	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 24.334, 200)
-	order2 := testMatchCreateOrderFor(2, 3, Sell, Limit, Submitted, 23.23, 180)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "btcetc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-}
-
-func ExampleMatchMarket() {
-	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 24.334, 200)
-	order2 := testMatchCreateOrderFor(2, 3, Buy, Limit, Submitted, 23.334, 540)
-	order3 := testMatchCreateOrderFor(3, 4, Buy, Limit, Submitted, 20.334, 72)
-	order4 := testMatchCreateOrderFor(5, 9, Sell, Market, Submitted, 23.23, 1000)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "btcetc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-
-	matchResult3 := book.GenMatchResult(order3)
-	b3, _ := json.Marshal(matchResult3)
-	log.Println("results:", string(b3))
-
-	matchResult4 := book.GenMatchResult(order4)
-	b4, _ := json.Marshal(matchResult4)
-	log.Println("results:", string(b4))
-}
-
 func TestOrderBook_GenMatchResult2(t *testing.T) {
 	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 24.334, 200)
 	order2 := testMatchCreateOrderFor(2, 3, Buy, Limit, Submitted, 23.334, 540)
@@ -371,53 +306,6 @@ func TestOrderBook_GenMatchResult2(t *testing.T) {
 	if string(b) == "{\"id\":7,\"symbol\":\"btcetc\",\"ts\":0,\"order-type\":\"sell-market\",\"items\":[{\"order-id\":2,\"role\":\"maker\",\"price\":\"24.334\",\"filled-amount\":\"200\",\"state\":\"filled\"},{\"order-id\":3,\"role\":\"maker\",\"price\":\"23.334\",\"filled-amount\":\"540\",\"state\":\"filled\"},{\"order-id\":9,\"role\":\"taker\",\"unfilled-amount\":\"260\",\"state\":\"partial-canceled\"}],\"publish-ts\":1529999952656}" {
 		t.Errorf("result equal")
 	}
-}
-
-func ExampleMatchMarketSellFloat() {
-	order1 := testMatchCreateOrderFor(1, 2, Buy, Limit, Submitted, 21.334, 200.2)
-	order2 := testMatchCreateOrderFor(2, 3, Buy, Limit, Submitted, 22.234, 540.3)
-	order3 := testMatchCreateOrderFor(3, 4, Buy, Limit, Submitted, 22.334, 72.9)
-	order4 := testMatchCreateOrderFor(5, 9, Sell, Market, Submitted, 24.23, 1000.1)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "btcetc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-
-	matchResult3 := book.GenMatchResult(order3)
-	b3, _ := json.Marshal(matchResult3)
-	log.Println("results:", string(b3))
-
-	matchResult4 := book.GenMatchResult(order4)
-	b4, _ := json.Marshal(matchResult4)
-	log.Println("results:", string(b4))
-}
-func ExampleMatchMarketBuyFloat() {
-	order1 := testMatchCreateOrderFor(1, 2, Sell, Limit, Submitted, 21.334, 200.2)
-	order2 := testMatchCreateOrderFor(2, 3, Sell, Limit, Submitted, 22.234, 540.3)
-	order3 := testMatchCreateOrderFor(3, 4, Sell, Limit, Submitted, 22.334, 72.9)
-	order4 := testMatchCreateOrderFor(5, 9, Buy, Market, Submitted, 24.23, 1000.1)
-	// order1 := testMatchCreateOrderFor(1, 2, Buy,  Limit, 24, 200 )
-	book := InitOrderBook(0, "ethbtc")
-	matchResult1 := book.GenMatchResult(order1)
-	b, _ := json.Marshal(matchResult1)
-	log.Println("results:", string(b))
-
-	matchResult2 := book.GenMatchResult(order2)
-	b1, _ := json.Marshal(matchResult2)
-	log.Println("results:", string(b1))
-
-	matchResult3 := book.GenMatchResult(order3)
-	b3, _ := json.Marshal(matchResult3)
-	log.Println("results:", string(b3))
-
-	matchResult4 := book.GenMatchResult(order4)
-	b4, _ := json.Marshal(matchResult4)
-	log.Println("results:", string(b4))
 }
 
 func TestOrderBook_Match2(t *testing.T) {

@@ -25,7 +25,7 @@ LDFLAGS=-ldflags "-X main.GitTag=${GITTAG}-${HOSTNAME} -X main.BuildTime=${BUILD
 
 # Linux 构建（Docker 交叉编译，使用与 go.mod 一致的 Go 版本）
 all:
-	docker run --rm -v `pwd`:/go/src/match-engine -w /go/src/match-engine  golang:1.21 sh -c 'CGO_ENABLED=0 go build -a -installsuffix cgo ${LDFLAGS} -o ${OUTPUT} ./cmd/exchange/'
+	docker run --rm -v `pwd`:/go/src/match-engine -w /go/src/match-engine  golang:1.27 sh -c 'CGO_ENABLED=0 go build -a -installsuffix cgo ${LDFLAGS} -o ${OUTPUT} ./cmd/exchange/'
 
 # macOS 本地构建（集中式模式）
 mac:
