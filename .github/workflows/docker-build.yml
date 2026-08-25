@@ -97,6 +97,9 @@ jobs:
             set -e
             cd /home/coffee_time/AnuBookDEX
             git pull --rebase || echo "⚠️ git pull 失败，使用当前代码"
-            # 服务器本地构建部署（镜像包含 leo CLI 与前端产物）
-            docker compose up -d --build
+            # 直接拉取 CI 推送的 GHCR 镜像（服务器不本地构建，秒级更新）
+            # 仓库为 private 时需先在服务器 docker login ghcr.io
+            docker compose pull
+            docker compose up -d --remove-orphans
+            docker image prune -f
             docker compose ps

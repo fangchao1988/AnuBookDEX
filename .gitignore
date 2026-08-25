@@ -1,6 +1,6 @@
 # Binaries
 *.bin
-engine
+/engine
 *.exe
 *.dll
 *.so
@@ -57,9 +57,11 @@ Thumbs.db
 # Dependency directories
 vendor/
 
-# Docker
-Dockerfile
+# Docker（Dockerfile/.dockerignore 需进仓库供 CI 构建；仅忽略本地辅助文件）
+!deploy/engine/Dockerfile
+!web/Dockerfile
 .dockerignore
+dockerignore.*
 
 # leo CLI 离线安装包（国内服务器构建用，勿提交）
 deploy/leo.zip
