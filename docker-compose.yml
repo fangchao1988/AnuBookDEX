@@ -13,11 +13,11 @@
 
 services:
   engine:
-    # 本地构建（默认）：build 存在时 compose 优先本地构建
-    # 镜像仓库模式：删除 build 段，改为 docker compose pull（CI 推送 ghcr.io/{repo}/engine）
-    build:
-      context: .
-      dockerfile: deploy/engine/Dockerfile
+    # CI 镜像模式：docker compose pull 直接拉 GHCR（服务器不本地构建，秒级更新）
+    # 本地构建模式（可选）：取消 build 段注释后 docker compose up -d --build
+    # build:
+    #   context: .
+    #   dockerfile: deploy/engine/Dockerfile
     image: ghcr.io/fangchao1988/anubookdex/engine:latest
     container_name: anubookdex-engine
     env_file: .env.aleo
@@ -42,7 +42,8 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    # CI 镜像模式：同上，本地构建可取消注释 build: ./web
+    # build: ./web
     image: ghcr.io/fangchao1988/anubookdex/web:latest
     container_name: anubookdex-web
     ports:
