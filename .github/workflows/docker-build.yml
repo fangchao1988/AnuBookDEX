@@ -62,6 +62,9 @@ jobs:
           context: .
           file: deploy/engine/Dockerfile
           push: true
+          # 海外 CI：官方 Go 模块源；leo 直接从 GitHub release 下载（LEO_URL 默认直连）
+          build-args: |
+            GOPROXY=https://proxy.golang.org,direct
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo }}/engine:latest
             ghcr.io/${{ steps.meta.outputs.repo }}/engine:${{ steps.meta.outputs.tag }}
@@ -73,6 +76,8 @@ jobs:
           context: ./web
           file: web/Dockerfile
           push: true
+          build-args: |
+            NPM_REGISTRY=https://registry.npmjs.org
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo }}/web:latest
             ghcr.io/${{ steps.meta.outputs.repo }}/web:${{ steps.meta.outputs.tag }}

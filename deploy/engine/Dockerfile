@@ -10,8 +10,10 @@ FROM golang:1.23-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
-# 国内服务器加速：proxy.golang.org（Google）在国内常超时，换 goproxy.cn
-ENV GOPROXY=https://goproxy.cn,direct
+# Go 模块代理：国内构建用 goproxy.cn（默认），海外 CI 构建
+# 用 --build-arg GOPROXY=https://proxy.golang.org,direct 覆盖回官方源
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 
 WORKDIR /build
 COPY go.mod go.sum ./

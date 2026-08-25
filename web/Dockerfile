@@ -5,8 +5,10 @@
 # ─── Stage 1: 构建 ───────────────────────────────────────
 FROM node:22-alpine AS builder
 
-# 国内服务器加速：npm 默认 registry 可能慢，切 npmmirror
-RUN npm config set registry https://registry.npmmirror.com
+# npm registry：国内构建用 npmmirror（默认），海外 CI 构建
+# 用 --build-arg NPM_REGISTRY=https://registry.npmjs.org 覆盖回官方源
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+RUN npm config set registry ${NPM_REGISTRY}
 
 WORKDIR /build
 COPY package.json package-lock.json* ./
