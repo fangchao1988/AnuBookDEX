@@ -6,7 +6,8 @@
 # 基础镜像必须包含 leo CLI（从官方 GitHub release 下载 Linux x86_64 二进制）。
 
 # ─── Stage 1: 构建引擎二进制 ─────────────────────────────
-FROM golang:1.23-alpine AS builder
+# Go 版本与 go.mod 保持一致（go 1.27.0）；GOTOOLCHAIN=local 时镜像版本必须 >= go.mod 声明
+FROM golang:1.27-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
