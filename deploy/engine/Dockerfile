@@ -92,4 +92,5 @@ EXPOSE 9000
 # 数据/日志挂载点（docker volume）
 VOLUME ["/app/data", "/app/logs", "/app/sp-aleo-p3"]
 
-ENTRYPOINT ["./app/engine-aleo.bin"]
+# 绝对路径（相对 WORKDIR 的 ./app/ 会解析成 /app/app/ 导致容器启动失败）
+ENTRYPOINT ["/app/engine-aleo.bin"]
