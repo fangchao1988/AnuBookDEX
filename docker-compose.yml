@@ -18,7 +18,7 @@ services:
     build:
       context: .
       dockerfile: deploy/engine/Dockerfile
-    image: ghcr.io/alecobookdex/anubookdex/engine:latest
+    image: ghcr.io/fangchao1988/anubookdex/engine:latest
     container_name: anubookdex-engine
     env_file: .env.aleo
     environment:
@@ -43,7 +43,7 @@ services:
 
   web:
     build: ./web
-    image: ghcr.io/alecobookdex/anubookdex/web:latest
+    image: ghcr.io/fangchao1988/anubookdex/web:latest
     container_name: anubookdex-web
     ports:
       - "8080:80"

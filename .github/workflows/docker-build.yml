@@ -47,6 +47,8 @@ jobs:
       - name: Compute image tag
         id: meta
         run: |
+          # GHCR 仓库名必须全小写（AnuBookDEX -> anubookdex）
+          echo "repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
           else
@@ -61,8 +63,8 @@ jobs:
           file: deploy/engine/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/engine:latest
-            ghcr.io/${{ github.repository }}/engine:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.repo }}/engine:latest
+            ghcr.io/${{ steps.meta.outputs.repo }}/engine:${{ steps.meta.outputs.tag }}
 
       # ─── 前端镜像（Nginx 托管 + 反向代理） ───
       - name: Build & Push web
@@ -72,8 +74,8 @@ jobs:
           file: web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/web:latest
-            ghcr.io/${{ github.repository }}/web:${{ steps.meta.outputs.tag }}
+            ghcr.io/${{ steps.meta.outputs.repo }}/web:latest
+            ghcr.io/${{ steps.meta.outputs.repo }}/web:${{ steps.meta.outputs.tag }}
 
   deploy:
     name: Deploy to Server

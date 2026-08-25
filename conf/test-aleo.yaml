@@ -1,4 +1,4 @@
-# AnuBookDEX Aleo 引擎生产配置模板
+# AnuBookDEX Aleo 引擎配置（服务器部署用）
 #
 # 使用：
 #   docker compose 默认挂载本文件为引擎 config（docker-compose.yml）
