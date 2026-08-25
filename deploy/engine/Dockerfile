@@ -27,8 +27,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -o /engine-aleo.bin \
     ./cmd/engine/aleo/
 
-# ─── Stage 2: 运行时（debian slim + leo CLI） ─────────────
-FROM debian:bookworm-slim
+# ─── Stage 2: 运行时（ubuntu 24.04 + leo CLI） ─────────────
+# 注意：leo 4.4.1 官方 Linux 二进制要求 GLIBC >= 2.39，
+# debian:bookworm(2.36) 会报 `GLIBC_2.38' not found，必须用 ubuntu:24.04(glibc 2.39)+
+FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip wget \
