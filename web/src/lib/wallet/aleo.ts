@@ -104,6 +104,9 @@ export class LeoWalletAdapter implements AleoWallet {
 export class DevWallet implements AleoWallet {
   readonly kind = 'dev' as const
   private address: string | null = null
+  // 竞态补救：创建时未检测到真钱包（扩展注入晚于页面 JS），connect() 时若
+  // 已注入则切换 delegate 透传 —— store 持有的 DevWallet 引用无需重建
+  private delegate: AleoWallet | null = null
 
   isConnected() {
     return this.address !== null
@@ -114,6 +117,14 @@ export class DevWallet implements AleoWallet {
   }
 
   async connect(): Promise<string> {
+    // 先实时重查注入状态：扩展 content script 注入晚于页面 JS 时，
+    // createWallet() 当时降级到了本 DevWallet —— 此刻检测到真钱包则透传
+    const real = resolveWallet()
+    if (real) {
+      this.delegate = real
+      this.address = await real.connect()
+      return this.address
+    }
     // 浏览器钱包扩展（Shield/Leo）的 content script 只在 localhost/127.0.0.1 与 HTTPS
     // 页面注入（扩展安全设计，防止 HTTP 明文页面被中间人攻击注入钱包）。
     // Dev 钱包仅限本地联调（localhost / dev 环境变量）；生产域名下静默降级会显示
@@ -134,13 +145,15 @@ export class DevWallet implements AleoWallet {
     this.address = null
   }
 
-  async getBalances(_baseSymbol: string): Promise<WalletBalances> {
-    // 联调占位：公开/隐私拆分模拟（ALEOS 总 80 = 公开 50 + 隐私 30；USDCX 总 200 = 公开 120 + 隐私 80），
-    // 与真实钱包聚合口径一致（隐私 = 总 - 公开）
+  async getBalances(baseSymbol: string): Promise<WalletBalances> {
+    // 已透传真钱包：走真实链上查询；否则联调占位
+    // （公开/隐私拆分模拟与真实聚合口径一致：隐私 = 总 - 公开）
+    if (this.delegate) return this.delegate.getBalances(baseSymbol)
     return { aleo: '80.00', usdt: '128,456.78', base: '0.5234', usdcx: '200.00', aleoPublic: '50.00', usdcxPublic: '120.00' }
   }
 
   async placeOrder(params: PlaceOrderParams): Promise<PlacedOrder> {
+    if (this.delegate) return this.delegate.placeOrder(params)
     // 联调占位：与灌单脚本/OrderForm dev 降级一致
     return {
       txId: `dev-tx-${params.orderId}`,
@@ -148,31 +161,43 @@ export class DevWallet implements AleoWallet {
     }
   }
 
-  async mintToken(_tokenId: number, _amount: number): Promise<void> {
+  async mintToken(tokenId: number, amount: number): Promise<void> {
+    if (this.delegate) return this.delegate.mintToken(tokenId, amount)
     // Dev 模式模拟铸币（无链上操作）
   }
 
   async deployProgram(): Promise<string> {
+    if (this.delegate) return this.delegate.deployProgram()
     // Dev 模式模拟部署
     return 'dev-deploy-placeholder'
   }
 
   async getCredentials(): Promise<void> {
+    if (this.delegate) return this.delegate.getCredentials()
     // Dev 模式模拟领取凭证（无链上操作）
   }
 }
 
-// 工厂：优先真钱包（Shield -> Leo），缺失时 DevWallet（本地联调可走通全流程）
+// 工厂：优先真钱包（Shield -> Leo），缺失时 DevWallet（本地联调可走通全流程）。
+// 注意：钱包扩展的 content script 注入时机与页面 JS 加载存在竞态（扩展常在
+// document_idle 才注入），模块加载时一次性检测会漏检 —— 因此这里只做静态选择，
+// connect() 内部再通过 resolveWallet() 实时重查 window.shield / window.leoWallet。
 export function createWallet(): AleoWallet {
-  if (typeof window !== 'undefined') {
-    // Shield（Provable 官方，window.shield 注入，Aleo Wallet Standard）
-    if ((window as unknown as { shield?: unknown }).shield) {
-      return new ShieldWalletAdapter()
-    }
-    // Leo Wallet（旧版扩展，window.leoWallet 注入）
-    if ((window as LeoWalletWindow).leoWallet) {
-      return new LeoWalletAdapter()
-    }
-  }
-  return new DevWallet()
+  return resolveWallet() ?? new DevWallet()
+}
+
+// 连接时实时解析钱包类型：DevWallet 是可变代理 —— 若此刻检测到真钱包，
+// 替换自身 delegate 后透传（已创建的 store 引用不变，行为切换为真钱包）
+function detectInjected(): 'shield' | 'leo' | null {
+  if (typeof window === 'undefined') return null
+  if ((window as unknown as { shield?: unknown }).shield) return 'shield'
+  if ((window as LeoWalletWindow).leoWallet) return 'leo'
+  return null
+}
+
+function resolveWallet(): AleoWallet | null {
+  const kind = detectInjected()
+  if (kind === 'shield') return new ShieldWalletAdapter()
+  if (kind === 'leo') return new LeoWalletAdapter()
+  return null
 }
