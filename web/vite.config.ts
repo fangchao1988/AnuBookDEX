@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    allowedHosts: ['localhost', '127.0.0.1', 'fangchao1988.xicp.net','stopped-yield-untruth.ngrok-free.dev'],
+    allowedHosts: ['localhost', '127.0.0.1', 'yilecai.top','stopped-yield-untruth.ngrok-free.dev'],
     port: 5173,
     proxy: {
       // 后端引擎：WS 行情（internal/dex/ws，http.port 9000）
