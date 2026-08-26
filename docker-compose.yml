@@ -9,7 +9,7 @@
 #   2. cp conf/dev-aleo.yaml conf/config.yaml  # 或准备生产配置
 #   3. docker compose up -d --build
 #
-# 访问：http://localhost:8080
+# 访问：http://localhost:5005
 
 services:
   engine:
@@ -47,7 +47,7 @@ services:
     image: ghcr.io/fangchao1988/anubookdex/web:latest
     container_name: anubookdex-web
     ports:
-      - "8080:80"
+      - "5005:80"
     depends_on:
       engine:
         condition: service_healthy

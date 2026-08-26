@@ -52,7 +52,7 @@ docker compose ps
 echo ""
 echo "=============================================="
 echo " ✅ 部署完成"
-echo "  前端: http://<服务器IP>:8080"
+echo "  前端: http://<服务器IP>:5005"
 echo "  引擎: http://<服务器IP>:9000/health"
 echo ""
 echo "  常用命令:"
