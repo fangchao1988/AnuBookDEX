@@ -115,17 +115,15 @@ export class DevWallet implements AleoWallet {
 
   async connect(): Promise<string> {
     // 浏览器钱包扩展（Shield/Leo）的 content script 只在 localhost/127.0.0.1 与 HTTPS
-    // 页面注入（扩展安全设计，防止 HTTP 明文页面被中间人攻击注入钱包）。HTTP 外网
-    // 域名（如内网穿透）下检测不到 window.shield，会静默回退到本降级钱包并显示
-    // 占位地址——这里给出明确指引，避免误导。
-    if (
-      typeof window !== 'undefined' &&
-      window.location.protocol === 'http:' &&
-      window.location.hostname !== 'localhost' &&
-      window.location.hostname !== '127.0.0.1'
-    ) {
+    // 页面注入（扩展安全设计，防止 HTTP 明文页面被中间人攻击注入钱包）。
+    // Dev 钱包仅限本地联调（localhost / dev 环境变量）；生产域名下静默降级会显示
+    // 占位地址误导用户 —— 改为明确报错并给出指引。
+    const isLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+    if (!isLocal && !import.meta.env.DEV) {
       throw new Error(
-        '钱包扩展仅在 localhost 或 HTTPS 页面注入，HTTP 外网域名下无法使用。请改用 https:// 访问本页面（如 Cloudflare Tunnel / ngrok 等 HTTPS 隧道）后再连接钱包'
+        '未检测到 Aleo 钱包扩展（Shield）。请确认：1) 已安装并解锁 Shield 钱包；' +
+        '2) 扩展「网站访问权限」允许本站点（chrome://extensions → Shield → 详情）；' +
+        '3) 解锁后硬刷新页面（Ctrl+Shift+R）。'
       )
     }
     this.address = DEV_ADDRESS
