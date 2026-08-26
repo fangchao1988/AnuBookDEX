@@ -100,6 +100,8 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          # 服务器从 GHCR 拉镜像国内链路较慢（97MB 引擎镜像实测 ~10min），默认 10m 不够
+          command_timeout: 30m
           script: |
             set -e
             cd /home/coffee_time/AnuBookDEX
