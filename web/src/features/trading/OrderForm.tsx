@@ -139,7 +139,7 @@ export function OrderForm() {
     let placedTxId = ''
     let ciphertext: string | undefined
     try {
-      if (wallet.isConnected() && wallet.kind !== 'dev') {
+      if (wallet.isConnected()) {
         // 链上锁仓：钱包执行 place_order（p2）/place_order_buy/sell（p4）-> 链上 txId；
         // operator 地址由适配器从引擎 /api/v1/operator 获取（chain.aleo.address 配置）
         const placed = await wallet.placeOrder({
@@ -159,7 +159,7 @@ export function OrderForm() {
         placedTxId = placed.txId
         ciphertext = placed.ciphertext
       } else {
-        // DevWallet / 未连接：联调占位（隐私模式与 p4 真实币对必须真实钱包 —— 链上提取+解密）
+        // 未连接：p4 真实币对与隐私模式必须真实钱包（链上托管+解密撮合）
         if (privacyMode === 'privacy') throw new Error('隐私下单需要真实钱包（链上加密+解密撮合）')
         if (isP4) throw new Error('ALEO/USDCX 下单需要 Shield 钱包（链上托管+引擎提取）')
         ciphertext = 'ciphertext1dev-ui-placeholder'
