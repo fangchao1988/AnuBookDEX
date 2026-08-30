@@ -180,7 +180,7 @@ func findTransition(transitions []interface{}, programID string) (map[string]int
 		if !ok {
 			continue
 		}
-		if transitionProgram(tr) != programID {
+		if !programIDMatches(transitionProgram(tr), programID) {
 			continue
 		}
 		fn, _ := tr["function"].(string)
@@ -190,12 +190,21 @@ func findTransition(transitions []interface{}, programID string) (map[string]int
 }
 
 // transitionProgram 新版 snarkOS transition 字段为 program，旧版为 program_id（兼容两者）。
+// 兼容带网络前缀的 program ID（如 testnet.anubook_dex_p4.aleo），用后缀匹配。
 func transitionProgram(tr map[string]interface{}) string {
 	if pid, _ := tr["program"].(string); pid != "" {
 		return pid
 	}
 	pid, _ := tr["program_id"].(string)
 	return pid
+}
+
+// programIDMatches 宽松匹配：精确相等 或 以 ".expected" 结尾（兼容 network.program 格式）
+func programIDMatches(actual, expected string) bool {
+	if actual == expected {
+		return true
+	}
+	return strings.HasSuffix(actual, "."+expected) || strings.HasSuffix(actual, "/"+expected)
 }
 
 // firstRecordOutput 返回 transition 第一个 record output 的 ciphertext。
@@ -224,7 +233,7 @@ func recordOutputsOf(transitions []interface{}, programID, function string) ([]s
 		if !ok {
 			continue
 		}
-		if transitionProgram(tr) != programID {
+		if !programIDMatches(transitionProgram(tr), programID) {
 			continue
 		}
 		fn, _ := tr["function"].(string)
