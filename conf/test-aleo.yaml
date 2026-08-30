@@ -13,6 +13,7 @@ app:
 symbols:
   - ETH_USDT
   - BTC_USDT
+  - ALEO_USDCX
 
 symbol-info:
   default:
@@ -62,6 +63,9 @@ chain:
   aleo:
     rpc-endpoint: "https://api.explorer.provable.com/v1"   # 生产 RPC（testnet；mainnet 需替换）
     program-id: "anubook_dex_p2.aleo"                      # 链上合约（与部署一致）
+    # 按交易对覆盖程序 ID（ALEO/USDCX 用 p7 真实币对；其余用 p2 铸币模式）
+    program-id-by-symbol:
+      ALEO_USDCX: "anubook_dex_p7.aleo"
     private-key: ""            # 不落盘：ALEO_PRIVATE_KEY（env 注入）
     view-key-private: ""       # 不落盘：ALEO_VIEW_KEY（env 注入；隐私下单解密）
     address: "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal"  # operator（结算接收）

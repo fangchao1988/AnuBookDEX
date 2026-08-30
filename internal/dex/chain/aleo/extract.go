@@ -180,21 +180,12 @@ func findTransition(transitions []interface{}, programID string) (map[string]int
 		if !ok {
 			continue
 		}
-		actual := transitionProgram(tr)
-		if programIDMatches(actual, programID) {
+		if programIDMatches(transitionProgram(tr), programID) {
 			fn, _ := tr["function"].(string)
 			return tr, fn, nil
 		}
-		common.Debug("aleo extract: transition program mismatch", "actual", actual, "expected", programID)
 	}
-	// 汇总所有 transition 的 program 供调试
-	var all []string
-	for _, t := range transitions {
-		if tr, ok := t.(map[string]interface{}); ok {
-			all = append(all, transitionProgram(tr))
-		}
-	}
-	return nil, "", fmt.Errorf("transition of %s not found in tx; available: %v", programID, all)
+	return nil, "", fmt.Errorf("transition of %s not found in tx", programID)
 }
 
 // transitionProgram 新版 snarkOS transition 字段为 program，旧版为 program_id（兼容两者）。
