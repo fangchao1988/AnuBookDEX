@@ -2,8 +2,9 @@ package common
 
 import (
 	"fmt"
-	"github.com/AnuBookDEX/engine/internal/infra/config"
 	"math"
+
+	"github.com/AnuBookDEX/engine/internal/infra/config"
 
 	"os"
 	"runtime"
@@ -35,7 +36,7 @@ type DepthStep struct {
 	Capacity int64
 }
 
-//type for symbol-info
+// type for symbol-info
 type SymbolInfo struct {
 	Symbol                 string
 	AmountScale            int32
@@ -63,7 +64,10 @@ func LoadConfigViper() error {
 	}
 
 	viper.BindEnv("app.seq", "CAPTAIN_SEQ")
+	// Anubis operator 结算私钥：优先 metamask（测试网充值账户），回落通用 key
+	viper.BindEnv("chain.anubis.metamask-private-key", "ANUBIS_PRIVATE_KEY_METAMASK")
 	viper.BindEnv("chain.anubis.private-key", "ANUBIS_PRIVATE_KEY")
+	viper.BindEnv("chain.anubis.view-key-private", "ANUBIS_VIEW_KEY")
 	viper.BindEnv("chain.aleo.private-key", "ALEO_PRIVATE_KEY")
 	viper.BindEnv("chain.aleo.view-key-private", "ALEO_VIEW_KEY")
 

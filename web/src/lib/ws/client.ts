@@ -37,6 +37,8 @@ class WsClient {
   private ws: WebSocket | null = null
   private status: WsStatus = 'idle'
   private channels = new Set<string>()
+  /** WS 路径：Aleo 引擎为 /ws，Anubis 引擎为 /anubis/ws（独立部署） */
+  private wsPath = '/ws'
   private statusListeners = new Set<StatusListener>()
   private messageListeners = new Set<MessageListener>()
   private retryMs = MIN_RETRY
@@ -70,9 +72,25 @@ class WsClient {
 
   private url(): string {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const url = `${proto}://${location.host}/ws`
+    const url = `${proto}://${location.host}${this.wsPath}`
     const token = localStorage.getItem('auth_token')
     return token ? `${url}?token=${encodeURIComponent(token)}` : url
+  }
+
+  /**
+   * 切换 WS 路径（双链：Aleo /ws ↔ Anubis /anubis/ws）。
+   * 路径变化时关闭现有连接并重连；频道集合保留，重连后自动重订阅。
+   */
+  setPath(path: string) {
+    if (this.wsPath === path) return
+    this.wsPath = path
+    if (this.ws) {
+      this.ws.onclose = null // 避免触发自动重连逻辑
+      this.ws.close()
+      this.ws = null
+    }
+    this.setStatus('idle')
+    if (this.channels.size > 0) this.connect()
   }
 
   connect() {

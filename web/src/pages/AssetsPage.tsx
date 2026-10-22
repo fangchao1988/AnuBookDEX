@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useWallet } from '../stores/wallet'
+import { useChain } from '../stores/chain'
+import { fetchAnubisTrades, settleLabel, tradePerspective, type AnubisTradeRecord } from '../lib/api/anubis'
 import { useMarket } from '../stores/marketStore'
 import { useMarketChannels } from '../hooks/useMarketChannels'
 import { formatNumber, dateTimeStr } from '../lib/format'
@@ -12,6 +14,144 @@ const ALEO_PRICE = 0.5
 
 // 资产总览：真实钱包数据（链上余额 + 行情估值）
 export default function AssetsPage() {
+  const chain = useChain((s) => s.chain)
+  // 双链分流：Anubis（EVM/DAI）与 Aleo（records）资产模型完全不同，
+  // 拆成独立组件而非在同一张表里混显（避免展示无关链的资产）
+  if (chain === 'anubis') return <AnubisAssets />
+  return <AleoAssets />
+}
+
+/** Anubis（EVM）资产：gas/结算币 DAI + 本链成交 */
+function AnubisAssets() {
+  const address = useChain((s) => s.address)
+  const config = useChain((s) => s.evmConfig)
+  const balance = useChain((s) => s.evmBalance)
+  const refreshBalances = useChain((s) => s.refreshBalances)
+  const [trades, setTrades] = useState<AnubisTradeRecord[]>([])
+
+  useEffect(() => {
+    if (!address) return
+    let alive = true
+    const load = async () => {
+      try {
+        const list = await fetchAnubisTrades({ limit: 50 })
+        // 后端返回该币对所有成交（含双方），此处按「我的地址」过滤 + 解析方向，
+        // 否则一笔成交会以买卖两条的形式重复展示
+        if (alive) setTrades(list.filter((t) => tradePerspective(t, address).mine))
+      } catch {
+        // 成交加载失败不阻断
+      }
+    }
+    void load()
+    const timer = window.setInterval(load, 5000)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+    }
+  }, [address])
+
+  const dai = Number(balance.replace(/,/g, '')) || 0
+
+  return (
+    <div className="p-5 overflow-y-auto h-full">
+      <h2 className="text-xl font-semibold mb-5">资产总览</h2>
+
+      {!address ? (
+        <div className="bg-bg-secondary border border-line rounded-lg p-10 text-center">
+          <div className="text-[15px] text-text-secondary mb-2">连接钱包查看 Anubis 链上资产</div>
+          <div className="text-xs text-text-muted">
+            当前网络：{config.chainName}（chainId {config.chainId}）
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(240px,1fr))]">
+            <div className="bg-bg-secondary border border-line rounded-lg p-4">
+              <div className="text-[11px] text-text-muted uppercase tracking-wide mb-1.5">DAI 余额</div>
+              <div className="text-[22px] font-bold">{formatNumber(dai, 4)}</div>
+              <div className="text-[11px] text-text-secondary mt-1">Anubis 原生 gas 代币</div>
+            </div>
+            <div className="bg-bg-secondary border border-line rounded-lg p-4">
+              <div className="text-[11px] text-text-muted uppercase tracking-wide mb-1.5">网络</div>
+              <div className="text-[15px] font-semibold">{config.chainName}</div>
+              <div className="text-[11px] text-text-muted mt-1 font-mono">chainId {config.chainId}</div>
+            </div>
+            <div className="bg-bg-secondary border border-line rounded-lg p-4">
+              <div className="text-[11px] text-text-muted uppercase tracking-wide mb-1.5">成交笔数</div>
+              <div className="text-[22px] font-bold">{trades.length}</div>
+              <div className="text-[11px] text-text-secondary mt-1">链上结算由引擎提交</div>
+            </div>
+          </div>
+
+          <h3 className="text-[15px] text-text-secondary mt-6 mb-3 border-b border-line pb-2">我的成交</h3>
+          <div className="bg-bg-secondary border border-line rounded-lg overflow-hidden">
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr>
+                  {['订单号', '交易对', '方向', '价格', '数量', '结算状态', '交易哈希'].map((h) => (
+                    <th key={h} className="bg-bg-tertiary text-text-muted font-normal px-4 py-2 text-left text-[11px]">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {trades.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-6 text-center text-text-muted text-xs">
+                      暂无成交
+                    </td>
+                  </tr>
+                ) : (
+                  trades.map((t, i) => {
+                    const p = tradePerspective(t, address)
+                    return (
+                    <tr key={`${t.order_id}-${i}`} className="hover:bg-bg-hover">
+                      <td className="px-4 py-2 border-t border-line font-mono">{t.order_id}</td>
+                      <td className="px-4 py-2 border-t border-line">{t.symbol.replace('_', '/')}</td>
+                      <td className={`px-4 py-2 border-t border-line ${p.side === 'buy' ? 'text-up' : 'text-down'}`}>
+                        {p.side === 'buy' ? '买入' : '卖出'}
+                      </td>
+                      <td className="px-4 py-2 border-t border-line font-mono">{scalePairValue(t.symbol, t.price)}</td>
+                      <td className="px-4 py-2 border-t border-line font-mono">{scalePairValue(t.symbol, t.amount)}</td>
+                      <td className="px-4 py-2 border-t border-line">
+                        {(() => {
+                          // 此前直接渲染原始英文串，且高亮判断 `=== 'confirmed'` 恒不成立
+                          //（后端旧值写作 sent）→ 已结算的也显示为进行中
+                          const lab = settleLabel(t.settle_status)
+                          const color =
+                            lab.cls === 'green' ? 'text-up' : lab.cls === 'red' ? 'text-down' : 'text-orange'
+                          return <span className={color}>{lab.text}</span>
+                        })()}
+                      </td>
+                      <td className="px-4 py-2 border-t border-line font-mono text-[11px] text-text-muted">
+                        {t.tx_hash ? `${t.tx_hash.slice(0, 12)}…` : '--'}
+                      </td>
+                    </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4 text-[11px] text-text-muted">
+            地址: <span className="font-mono text-text-secondary">{address}</span> · 余额来自 Anubis RPC
+            <button
+              className="ml-2 text-text-muted hover:text-text-primary cursor-pointer bg-transparent border-none p-0 underline"
+              onClick={() => void refreshBalances()}
+            >
+              刷新
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Aleo 资产：records（ALEO/USDCX/测试币） */
+function AleoAssets() {
   const walletAddress = useWallet((s) => s.address)
   const balances = useWallet((s) => s.balances)
 

@@ -48,6 +48,7 @@ export const DEFAULT_PRICES: Record<string, string> = {
   ETH_USDT: '1800.00',
   BTC_USDT: '1800.00',
   ALEO_USDCX: '0.016',
+  SOL_USDT: '200.00',
 }
 
 export function defaultPairPrice(symbol: string): string {

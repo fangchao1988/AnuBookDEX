@@ -56,8 +56,12 @@ func Encrypt(plaintext []byte, recipientPubKey *ecdsa.PublicKey, nullifier []byt
 
 	ciphertext := aesGCM.Seal(nil, iv, plaintext, nil)
 
-	// 4. 计算 ViewTag（共享密钥前 4 字节，用于客户端快速筛选 Note）
-	viewTag := sharedSecret[:4]
+	// 4. 计算 ViewTag：由接收方公钥派生（SHA256(compressedPub)[:4]），
+	//    而非共享密钥 —— 发送方在加密前即可算出（已知接收方公钥），
+	//    接收方用自身公钥算出同一值。共享密钥每次 ECDH 都不同，无法作为可预知标签。
+	recipientPubBytes := elliptic.MarshalCompressed(recipientPubKey.Curve, recipientPubKey.X, recipientPubKey.Y)
+	viewTagHash := sha256.Sum256(recipientPubBytes)
+	viewTag := viewTagHash[:4]
 
 	// 5. 生成 Note 承诺：SHA256(nullifier || ciphertext || ephemeralPK)
 	h := sha256.New()

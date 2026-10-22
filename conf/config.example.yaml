@@ -145,17 +145,22 @@ location: "Asia/Shanghai"
 chain:
   # ── Anubis 链后端（EVM，eth_getLogs 轮询 + Settlement SC）──
   anubis:
+    network: "testnet"                       # testnet(Cheras, chainId 202601) | mainnet(6714)
     rpc-endpoint: "${ANUBIS_RPC_ENDPOINT}"   # ENV: ANUBIS_RPC_ENDPOINT
     rpc-ws-endpoint: "${ANUBIS_RPC_WS_ENDPOINT}"
-    chain-id: 6714
-    settlement-contract: ""
+    chain-id: 202601
+    settlement-contract: ""                   # Settlement v2 SC（部署后回填）
     registry-contract: ""                     # OrderBookRegistry SC（订阅 OrderSubmitted 事件）
     private-key: ""                           # ENV: ANUBIS_PRIVATE_KEY；生产环境禁止硬编码
-    view-key-private: ""
+    view-key-private: ""                      # ENV: ANUBIS_VIEW_KEY；隐私订单 ECIES 解密
     settlement-batch-size: 100
     settlement-interval-ms: 500
     settlement-workers: 3
+    settlement-gate: false                    # true=0x0100 PLONK 验证（待 Anubis 公开电路参数）
     poll-interval-ms: 200
+    gas-tip-cap-gwei: 2
+    gas-fee-cap-gwei: 50
+    receipt-timeout-s: 120
   # ── Aleo 链后端（Leo/snarkVM，snarkOS REST；骨架阶段）──
   aleo:
     rpc-endpoint: "https://api.explorer.provable.com/v1"   # Aleo testnet（Provable explorer API）

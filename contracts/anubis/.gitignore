@@ -1,0 +1,10 @@
+node_modules/
+cache/
+artifacts/
+typechain-types/
+dist/
+.env
+coverage/
+coverage.json
+
+prompt/

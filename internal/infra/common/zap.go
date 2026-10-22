@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-var errorLogger *zap.SugaredLogger
+// errorLogger 默认 Nop（nil 时 Debug/Info 等会 panic；测试与未 init 场景静默丢弃，
+// ZapInit() 后替换为真实 logger）。
+var errorLogger = zap.NewNop().Sugar()
 
 func ZapInit() {
 	// 设置一些基本日志格式

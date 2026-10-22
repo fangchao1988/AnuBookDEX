@@ -7,6 +7,7 @@ import { useMarketChannels } from '../../hooks/useMarketChannels'
 import { toChannelSymbol } from '../../lib/symbol'
 import { formatNumber, formatPrice, truncateAddress } from '../../lib/format'
 import { useWallet } from '../../stores/wallet'
+import { useChain } from '../../stores/chain'
 import {
   IconBell,
   IconBolt,
@@ -20,6 +21,7 @@ const PAIRS = [
   { symbol: 'ALEO/USDCX', starred: true },
   { symbol: 'ETH/USDT', starred: true },
   { symbol: 'BTC/USDT', starred: true },
+  { symbol: 'SOL/USDT', starred: false },
 ]
 
 // 顶栏：对齐原型 #topbar（模式切换/交易对/Ticker/工具按钮/钱包）
@@ -35,15 +37,39 @@ export function TopBar() {
     togglePrivacyOff,
   } = useSettings()
   const openModal = useUi((s) => s.openModal)
-  const walletAddress = useWallet((s) => s.address)
-  const walletConnect = useWallet((s) => s.connect)
-  const walletDisconnect = useWallet((s) => s.disconnect)
-  const walletError = useWallet((s) => s.error)
-  const walletClearError = useWallet((s) => s.clearError)
+  // 双链：Anubis 用 EVM 钱包（MetaMask），Aleo 用 Shield/Leo 钱包
+  const chain = useChain((s) => s.chain)
+  const setChain = useChain((s) => s.setChain)
+  const evmNetwork = useChain((s) => s.evmNetwork)
+  const evmBalance = useChain((s) => s.evmBalance)
+  const chainConnect = useChain((s) => s.connect)
+  const walletChoices = useChain((s) => s.walletChoices)
+  const connectWithWallet = useChain((s) => s.connectWithWallet)
+  const cancelWalletPicker = useChain((s) => s.cancelWalletPicker)
+  const chainDisconnect = useChain((s) => s.disconnect)
+  const chainError = useChain((s) => s.error)
+  const chainClearError = useChain((s) => s.clearError)
+  // 注意：两个 store 的 hook 必须无条件调用（Rules of Hooks），
+  // 再按当前链选取生效的那一套，避免切链时 hook 顺序变化。
+  const evmAddress = useChain((s) => s.address)
+  const aleoAddress = useWallet((s) => s.address)
+  const aleoConnect = useWallet((s) => s.connect)
+  const aleoDisconnect = useWallet((s) => s.disconnect)
+  const aleoError = useWallet((s) => s.error)
+  const aleoClearError = useWallet((s) => s.clearError)
+
+  const isAnubis = chain === 'anubis'
+  const walletAddress = isAnubis ? evmAddress : aleoAddress
+  const walletConnect = isAnubis ? chainConnect : aleoConnect
+  const walletDisconnect = isAnubis ? chainDisconnect : aleoDisconnect
+  const walletError = isAnubis ? chainError : aleoError
+  const walletClearError = isAnubis ? chainClearError : aleoClearError
   const [pairOpen, setPairOpen] = useState(false)
   const [walletOpen, setWalletOpen] = useState(false)
+  const [chainOpen, setChainOpen] = useState(false)
   const pairRef = useRef<HTMLDivElement>(null)
   const walletRef = useRef<HTMLDivElement>(null)
+  const chainRef = useRef<HTMLDivElement>(null)
 
   // 实时行情：Ticker + 连接状态（未连接时回退 mock）
   const channelSymbol = toChannelSymbol(pair)
@@ -178,6 +204,38 @@ export function TopBar() {
       >
         <IconEyeOff className={`w-4 h-4 ${simpleMode ? 'text-up' : ''}`} />
       </button>
+      {/* 链切换：Aleo（Leo 隐私） / Anubis（EVM） */}
+      <div className="relative" ref={chainRef}>
+        <button
+          className="border border-line bg-bg-tertiary text-text-primary px-3 py-[7px] rounded-md font-semibold text-xs cursor-pointer hover:opacity-90 flex items-center gap-1"
+          onClick={() => setChainOpen((v) => !v)}
+          title="切换链"
+        >
+          {isAnubis ? 'Anubis' : 'Aleo'} <IconChevronDown className="w-3 h-3" />
+        </button>
+        {chainOpen && (
+          <div className="absolute top-full right-0 bg-bg-secondary border border-line rounded-md min-w-[220px] z-50 mt-1 shadow-dropdown">
+            <div
+              className={`px-3.5 py-2.5 text-xs cursor-pointer hover:bg-bg-hover ${isAnubis ? 'text-up' : 'text-text-primary'}`}
+              onClick={() => {
+                void setChain('aleo')
+                setChainOpen(false)
+              }}
+            >
+              Aleo <span className="text-text-muted text-[10px]">· Leo record 隐私</span>
+            </div>
+            <div
+              className={`px-3.5 py-2.5 text-xs cursor-pointer hover:bg-bg-hover border-t border-line ${isAnubis ? 'text-up' : 'text-text-primary'}`}
+              onClick={() => {
+                void setChain('anubis')
+                setChainOpen(false)
+              }}
+            >
+              Anubis <span className="text-text-muted text-[10px]">· EVM · {evmNetwork === 'mainnet' ? '主网' : 'Cheras 测试网'}</span>
+            </div>
+          </div>
+        )}
+      </div>
       {/* 钱包：未连接 -> 连接按钮；已连接 -> 地址下拉（断开连接） */}
       <div className="relative" ref={walletRef}>
         <button
@@ -192,6 +250,32 @@ export function TopBar() {
         >
           {walletAddress ? `${truncateAddress(walletAddress)} ▾` : '连接钱包'}
         </button>
+        {/* 多钱包选择器（EIP-6963）：OKX/MetaMask 等共存时让用户明确选择 */}
+        {walletChoices && walletChoices.length > 0 && (
+          <div className="absolute top-full right-0 mt-1 bg-bg-secondary border border-line rounded-md min-w-[240px] z-50 shadow-dropdown">
+            <div className="px-3.5 py-2 border-b border-line text-[10px] text-text-muted">
+              检测到 {walletChoices.length} 个钱包，请选择
+            </div>
+            {walletChoices.map((w) => (
+              <div
+                key={w.info.uuid}
+                className="px-3.5 py-2.5 text-xs text-text-primary cursor-pointer hover:bg-bg-hover flex items-center gap-2"
+                onClick={() => void connectWithWallet(w.info.rdns).catch(() => {})}
+              >
+                {w.info.icon && (
+                  <img src={w.info.icon} alt="" className="w-4 h-4 rounded-sm" />
+                )}
+                <span>{w.info.name}</span>
+              </div>
+            ))}
+            <div
+              className="px-3.5 py-2 text-[10px] text-text-muted cursor-pointer hover:text-text-primary border-t border-line"
+              onClick={cancelWalletPicker}
+            >
+              取消
+            </div>
+          </div>
+        )}
         {walletError && (
           <div className="absolute top-full right-0 mt-1 bg-bg-secondary border border-down/40 rounded-md min-w-[260px] max-w-[340px] z-50 shadow-dropdown">
             <div className="px-3 py-2 text-[11px] text-down leading-relaxed break-all">{walletError}</div>
@@ -206,7 +290,10 @@ export function TopBar() {
         {walletOpen && walletAddress && (
           <div className="absolute top-full right-0 bg-bg-secondary border border-line rounded-md min-w-[220px] z-50 mt-1 shadow-dropdown">
             <div className="px-3.5 py-2.5 border-b border-line">
-              <div className="text-[10px] text-text-muted mb-0.5">已连接 Aleo 网络</div>
+              <div className="text-[10px] text-text-muted mb-0.5">
+                已连接 {chain === 'anubis' ? (evmNetwork === 'mainnet' ? 'Anubis Mainnet' : 'Anubis Cheras 测试网') : 'Aleo 网络'}
+                {chain === 'anubis' && evmBalance !== '0' ? ` · ${evmBalance} DAI` : ''}
+              </div>
               <div className="font-mono text-xs text-text-secondary break-all">{walletAddress}</div>
             </div>
             <div

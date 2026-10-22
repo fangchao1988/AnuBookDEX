@@ -22,6 +22,7 @@ import (
 
 // Subscriber 链上事件订阅器
 // 订阅 Anubis Chain OrderBookRegistry SC 的 OrderSubmitted 事件并解密订单
+// MVP：主订单源=链下 OrderPool（Subscriber 消费池 -> 撮合）；次源=eth_getLogs 审计监听
 type Subscriber struct {
 	symbol       string                       // 当前订阅的交易对，如 "BTC/USDT"
 	rpcEndpoint  string                       // Anubis Chain HTTP RPC 节点地址（用于 eth_getLogs 轮询）
@@ -34,18 +35,21 @@ type Subscriber struct {
 	mu           sync.Mutex                   // 保护 subs map 的并发安全
 	subs         map[string]chan *match.Order // 交易对 -> 订单 channel 的映射，每个交易对独立推送
 	viewKey      *privacy.ViewKey             // 用于解密链上加密的订单 Note
+	pool         *OrderPool                   // 链下订单池（主订单源，优先消费）
+	firstSym     string                       // 首个订阅的交易对（兼容未带 symbol 的订单）
+	loopOnce     sync.Once                    // 订单池消费循环只启动一次
 }
 
 // NewSubscriber 创建链上事件订阅器
-func NewSubscriber(rpcEndpoint string) *Subscriber {
+func NewSubscriber(rpcEndpoint string, pool *OrderPool) *Subscriber {
 	ctx, cancel := context.WithCancel(context.Background())
 	// OrderSubmitted 事件签名 topic：从 OrderBookRegistry 合约 bytecode 提取（PUSH32），
 	// 待与合约 ABI 核对；可用 chain.order-submitted-topic 配置覆盖
 	orderTopic := config.GetString("chain.anubis.order-submitted-topic",
 		"0x942d46dddbdc36d1ed575e5093656f2952053568a7867ea0aaf449ace306f03c")
 	pollInterval := config.GetDuration("chain.anubis.poll-interval-ms", 200) * time.Millisecond
-	common.Info("chain subscriber: initialized http=%s poll-interval=%s topic=%s",
-		rpcEndpoint, pollInterval, orderTopic)
+	common.Info("chain subscriber: initialized http=%s poll-interval=%s topic=%s pool=%v",
+		rpcEndpoint, pollInterval, orderTopic, pool != nil)
 	return &Subscriber{
 		rpcEndpoint:  rpcEndpoint,
 		pollInterval: pollInterval,
@@ -54,12 +58,18 @@ func NewSubscriber(rpcEndpoint string) *Subscriber {
 		ctx:          ctx,
 		cancel:       cancel,
 		subs:         make(map[string]chan *match.Order),
+		pool:         pool,
 	}
 }
 
 // SetViewKey 设置用于解密链上订单的 View Key
 func (s *Subscriber) SetViewKey(vk *privacy.ViewKey) {
 	s.viewKey = vk
+}
+
+// GetViewKey 返回当前配置的 View Key
+func (s *Subscriber) GetViewKey() *privacy.ViewKey {
+	return s.viewKey
 }
 
 // Subscribe 订阅指定交易对的链上订单事件
@@ -74,9 +84,52 @@ func (s *Subscriber) Subscribe(symbol string) (<-chan *match.Order, error) {
 	ch := make(chan *match.Order, 5000)
 	s.subs[symbol] = ch
 
-	go s.eventLoop(symbol, ch)
-	common.Info(fmt.Sprintf("chain subscriber: subscribed to %s events", symbol))
+	if s.pool != nil {
+		// 订单池模式：首个订阅启动单一消费循环，按订单 Symbol 分发
+		if s.firstSym == "" {
+			s.firstSym = symbol
+		}
+		s.loopOnce.Do(func() { go s.poolLoop() })
+	} else {
+		// 兼容模式（无订单池）：保留旧链上 eth_getLogs 轮询
+		go s.eventLoop(symbol, ch)
+	}
+	common.Info(fmt.Sprintf("chain subscriber: subscribed to %s events (pool=%v)", symbol, s.pool != nil))
 	return ch, nil
+}
+
+// poolLoop 从订单池消费链下订单，按订单 Symbol 路由到对应撮合通道（镜像 aleo 实现）。
+func (s *Subscriber) poolLoop() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case po := <-s.pool.Orders():
+			if po == nil || po.Order == nil {
+				continue
+			}
+			sym := po.Order.Symbol
+			if sym == "" {
+				sym = s.firstSym // 兼容未带 symbol 的旧客户端
+			}
+			s.mu.Lock()
+			ch, ok := s.subs[sym]
+			s.mu.Unlock()
+			if !ok {
+				common.Warn("chain subscriber: no channel for symbol", sym, "order", po.Order.OrderId)
+				s.pool.Complete(uint64(po.Order.OrderId))
+				continue
+			}
+			select {
+			case ch <- po.Order:
+			case <-s.ctx.Done():
+				return
+			}
+			s.pool.Complete(uint64(po.Order.OrderId))
+			common.Debug("anubis subscriber: pooled order -> matcher", "order",
+				po.Order.OrderId, "symbol", sym, "side", po.Order.BuyOrSell, "price", po.Order.Price.String())
+		}
+	}
 }
 
 // Unsubscribe 取消订阅

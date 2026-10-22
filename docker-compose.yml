@@ -1,8 +1,11 @@
-# AnuBookDEX (Aleo DEX) Docker Compose 部署
+# AnuBookDEX 双链 Docker Compose 部署
 #
 # 服务：
-#   engine - Aleo 撮合引擎（链上结算/撤单依赖 leo CLI，镜像内已含）
-#   web    - 前端 Nginx（SPA + /ws /api /order 反向代理到 engine）
+#   engine        - Aleo 撮合引擎（链上结算/撤单依赖 leo CLI，镜像内已含）
+#   engine-anubis - Anubis 撮合引擎（EVM/ERC-20 金库结算，独立容器与端口）
+#   web           - 前端 Nginx（SPA + 反向代理）
+#                    /            → engine(aleo):9000
+#                    /anubis/*    → engine-anubis:9000（去掉前缀）
 #
 # 快速开始：
 #   1. cp .env.aleo.example .env.aleo   # 填入 ALEO_PRIVATE_KEY / ALEO_VIEW_KEY
@@ -41,6 +44,33 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # ── Anubis 撮合引擎（与 Aleo 引擎并存，独立端口与数据卷）──
+  engine-anubis:
+    image: ghcr.io/fangchao1988/anubookdex/engine-anubis:latest
+    # 本地构建模式（可选）
+    # build:
+    #   context: .
+    #   dockerfile: deploy/engine-anubis/Dockerfile
+    container_name: anubookdex-engine-anubis
+    env_file: .env.anubis
+    environment:
+      - CONFIG_FILE=/app/conf/config.yaml
+    volumes:
+      # Anubis 配置模板（密钥由 env_file 注入，配置里留空）
+      - ./conf/test-anubis.yaml:/app/conf/config.yaml:ro
+      - engine-anubis-data:/app/data
+      - engine-anubis-logs:/app/logs
+    ports:
+      # 直连（前端已通过 Nginx /anubis/ 代理；此端口便于调试）
+      - "9001:9000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   web:
     # CI 镜像模式：同上，本地构建可取消注释 build: ./web
     # build: ./web
@@ -51,9 +81,13 @@ services:
     depends_on:
       engine:
         condition: service_healthy
+      engine-anubis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   engine-data:
   engine-logs:
   engine-sp:
+  engine-anubis-data:
+  engine-anubis-logs:

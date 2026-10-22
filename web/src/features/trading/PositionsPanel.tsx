@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useSettings } from '../../stores/settings'
 import { useWallet } from '../../stores/wallet'
+import { useChain } from '../../stores/chain'
 import { toChannelSymbol } from '../../lib/symbol'
 import { pairMode } from '../../lib/tokens'
 import { privateBalance } from '../../lib/wallet/types'
+import { AnubisVaultPanel } from './AnubisVaultPanel'
 
 // 持仓列表：对齐原型 #positions-panel（现货卡片 + 杠杆卡片 + 风险条）
 // P3：钱包连接后展示链上余额（requestRecords 聚合），未连接展示演示数据
@@ -16,6 +18,15 @@ export function PositionsPanel() {
   const isP4 = pairMode(toChannelSymbol(pair)) === 'p4-real'
   const walletAddress = useWallet((s) => s.address)
   const balances = useWallet((s) => s.balances)
+  // 双链：Anubis 用 EVM 钱包（DAI 余额），Aleo 用 Shield/Leo（ALEO/USDCX record）
+  const chain = useChain((s) => s.chain)
+  const isAnubis = chain === 'anubis'
+  const chainAddress = useChain((s) => s.address)
+  const evmConfig = useChain((s) => s.evmConfig)
+  const evmBalance = useChain((s) => s.evmBalance)
+  const refreshBalances = useChain((s) => s.refreshBalances)
+  // 当前链生效的连接地址（两套钱包互不相通）
+  const activeAddress = isAnubis ? chainAddress : walletAddress
   const walletMint = useWallet((s) => s.mintToken)
   const walletDeploy = useWallet((s) => s.deployProgram)
   const walletGetCredentials = useWallet((s) => s.getCredentials)
@@ -78,7 +89,33 @@ export function PositionsPanel() {
         持仓
         <span className="text-[10px] text-text-muted ml-auto">({isPerp ? 1 : 3})</span>
       </div>
-      {walletAddress && balances && (
+      {/* Anubis（EVM）：gas/结算币为 DAI，直接展示原生余额 */}
+      {isAnubis && chainAddress && (
+        <div className="px-2.5 py-2 border-b border-line bg-bg-tertiary/50">
+          <div className="flex justify-between items-baseline mb-1">
+            <span className="text-[10px] text-text-muted">
+              钱包余额（{evmConfig.network === 'mainnet' ? 'Anubis 主网' : 'Cheras 测试网'}）
+            </span>
+            <button
+              className="text-[9px] text-text-muted hover:text-text-primary cursor-pointer bg-transparent border-none p-0"
+              onClick={() => void refreshBalances()}
+              title="刷新余额"
+            >
+              刷新
+            </button>
+          </div>
+          <div className="flex justify-between text-[11px] mb-0.5">
+            <span className="text-text-muted">DAI</span>
+            <span className="font-mono">{evmBalance}</span>
+          </div>
+          <div className="mt-1.5 text-[9px] text-text-muted leading-tight">
+            DAI 为 Anubis gas 代币（ERC-20）；交易币需先入金到结算金库
+          </div>
+        </div>
+      )}
+      {/* Anubis 金库：真实代币入金/提现 */}
+      {isAnubis && chainAddress && <AnubisVaultPanel />}
+      {!isAnubis && walletAddress && balances && (
         <div className="px-2.5 py-2 border-b border-line bg-bg-tertiary/50">
           {/* p6 标准（公开）下单用公开余额（transfer_public 托管），隐私下单用隐私 record；
               余额区随下单模式切换，避免误读余额 */}
@@ -181,16 +218,16 @@ export function PositionsPanel() {
         </div>
       )}
       {/* 钱包已连接：只显示真实数据（无演示卡片） */}
-      {walletAddress && !balances && (
+      {!isAnubis && walletAddress && !balances && (
         <div className="p-5 text-center text-text-muted text-[13px]">余额加载中…</div>
       )}
-      {!walletAddress && !isPerp && (
+      {!activeAddress && !isPerp && (
         <>
           <SpotCard pair="BTC/USDT" pnl="+543.40" amt="0.52 BTC" avg="67,200.00" />
           <SpotCard pair="ETH/USDT" pnl="+128.00" amt="3.20 ETH" avg="3,520.00" />
         </>
       )}
-      {!walletAddress && (
+      {!activeAddress && (
         <div className="p-2.5 border-b border-line cursor-pointer hover:bg-bg-hover border-l-2 border-l-orange">
           <div className="flex justify-between items-center mb-0.5">
             <span className="font-semibold">

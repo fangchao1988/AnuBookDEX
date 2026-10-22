@@ -1,0 +1,228 @@
+# AnuBookDEX · Anubis 引擎生产/测试网配置模板
+#
+# 部署：docker compose 挂载到容器 /app/conf/config.yaml
+# 密钥：不落盘，由 .env.anubis（env_file）注入
+#   ANUBIS_PRIVATE_KEY_METAMASK  operator 结算私钥（链上 submitBatch 签名）
+#   ANUBIS_VIEW_KEY              隐私订单 ECIES 解密私钥（P-256，hex）
+#
+# 与 conf/config.yaml（本地开发）的区别：所有密钥字段留空。
+
+app:
+  profile: "market"
+  name: "market" # ENV APP_NAME
+  seq: 0  # ENV CAPTAIN_SEQ
+
+rabbitmq:
+  protocol: "amqps"
+  address:
+    - "your-rabbitmq-host:5671"
+  virtual-host: "/"
+  username: "${RABBITMQ_USER}"
+  password: "${RABBITMQ_PASSWORD}"
+  conn-num: 10
+  conn-timeout-ms: 3000
+  n-retry: 30
+  ts-bumper-interval-ms: 3000
+  exchange:
+    market: "exchange.market-match.ts-bumper"
+    trade-detail: "exchange.market-match.match-result"
+    quotation: "l2quote"
+  max-delay-s: 60
+  compressed: false
+
+batch_result: 90
+
+snapshot:
+  dir: "./sp/"
+  ends-with: "-snapshot-go"
+  n-history: 10
+  min-gap: 100000
+
+scheduler:
+  snapshot: [0, 60000]  #15分钟
+  orderbook-report: [0, 1500000]
+
+redis:
+  address:
+    - "your-redis-cluster:6379"
+  password: "${REDIS_PASSWORD}"
+  db: "0"
+log:
+  debug: false
+  json-encode: false
+  info-path: "./logs/info.log"
+  error-path: "./logs/warn.log"
+  max-age: 168
+  rotation: 1
+  level: info # support trace debug info warn
+
+exchange:
+  l2quote:
+    size: 1800
+  trade:
+    size: 5000
+  depth:
+    size: 1000
+
+mrredis:
+  check-result: true
+
+symbols:
+  - ETH_USDT
+  - BTC_USDT
+  - ALEO_USDCX
+  - SOL_USDT
+
+
+market:
+  freq-depth-update-interval-ms: 30
+  min-depth-update-interval-ms: 100
+  min-stacked-depth-update-interval-ms: 1000
+  default-update-interval-ms: 1000
+
+symbol-info:
+  default:
+    amount-scale: 18
+    price-scale: 18
+    l2quote-price-scale: 2
+    depth-10percent-capacity: 200
+    depth-steps:
+      "0": [0.000000000000000001, 150]
+      "1": [0.00001, 150]
+      "2": [0.0001, 150]
+      "3": [0.001, 150]
+      "4": [0.01, 150]
+      "5": [0.1, 150]
+      "6": [0.000000000000000001, 20]
+      "7": [0.00001, 20]
+      "8": [0.0001, 20]
+      "9": [0.001, 20]
+      "10": [0.01, 20]
+      "11": [0.1, 20]
+    uncombined-depth-steps:
+      "150.high_freq": [0.000000000000000001, 150]
+      "20.high_freq":  [0.000000000000000001,  20]
+  ALEO_USDCX:
+    amount-scale: 6
+    price-scale: 6
+    l2quote-price-scale: 6
+    depth-10percent-capacity: 200
+    depth-steps:
+      "0": [0.000001, 150]
+      "1": [0.00001, 150]
+      "2": [0.0001, 150]
+      "3": [0.001, 150]
+      "4": [0.01, 150]
+      "5": [0.1, 150]
+      "6": [0.000001, 20]
+      "7": [0.00001, 20]
+      "8": [0.0001, 20]
+      "9": [0.001, 20]
+      "10": [0.01, 20]
+      "11": [0.1, 20]
+
+
+aibit-db:
+  endpoint: "${AIBIT_DB_HOST}"
+  user: "${AIBIT_DB_USER}"
+  password: "${AIBIT_DB_PASSWORD}"
+  db: "aibit"
+  conn-num: 20
+  pull-gap: 50 # min milliseconds between pull from mysql
+
+mysql:
+  endpoint: "${MYSQL_HOST}"
+  user: "${MYSQL_USER}"
+  password: "${MYSQL_PASSWORD}"
+  db: "aibit_spot_order"
+  conn-num: 20
+  pull-gap: 50 # min milliseconds between pull from mysql
+
+persistence:
+  endpoint: "${PERSISTENCE_HOST}"
+  user: "${PERSISTENCE_USER}"
+  password: "${PERSISTENCE_PASSWORD}"
+  db: "aibit_spot_order"
+  conn-num: 32
+  batch-size: 30
+
+aws:
+  credential:
+    access-key: "${AWS_ACCESS_KEY}"
+    secret-key: "${AWS_SECRET_KEY}"
+  s3:
+    enable: false
+    bucket: "t"
+    region: "a"
+    upload-timeout-second: 120 # second
+
+l2quote:
+  mq-send-interval-ms: 500
+  kline-forward-limit: 1440
+  make-new-kline-at-sec : 2
+  snapshot:
+    n-history: 10
+    path: "./sp/"
+
+location: "Asia/Shanghai"
+
+# DEX 模式配置（cmd/engine/{anubis,aleo}/main.go）
+# 双链同步开发：Anubis（EVM/Solidity）与 Aleo（Leo/snarkVM）各自独立配置。
+chain:
+  # ── Anubis 链后端（EVM，eth_getLogs 轮询 + Settlement SC）──
+  # network: 切换主网/测试网（切换后 rpc-endpoint / chain-id / 合约地址需成套切换）
+  #   testnet：Cheras 测试网（chainId 202601，合约需在该链重新部署）
+  #   mainnet：chainId 6714（合约已部署，见下方地址）
+  anubis:
+    network: "testnet"
+    rpc-endpoint: "https://cheras-rpc.anubispace.org/rpc"   # Cheras 测试网
+    chain-id: 202601
+    rpc-ws-endpoint: ""
+    # Settlement v2 SC（测试网已部署 2026-09-05，requireProof=false 承诺哈希模式；主网为 0xe1E7...965 = v1）
+    settlement-contract: "0xB11c339001b8db3827aD3047BA8Beb07Ca60e9Af"
+    # OrderBookRegistry SC（测试网已部署 2026-09-05；主网 0x5037...9d8，submitOrder 只存 nullifier+deadline）
+    registry-contract: "0x12cF0C1A8855e56CFBFc78b3845925b5c0d26514"
+    # 币对 -> ERC-20 代币地址（Settlement v3 金库真实划转用；缺失的币对跳过结算）
+    # 测试币：0 位小数，1 单位 = 1 代币（deploy-tokens.ts 部署）
+    pair-tokens:
+      ETH_USDT:
+        base: "0x0Ac44Ef43ED7086895196D05d7B51fda3038Be99"   # TETH
+        quote: "0x7233112f0FE25ae88b3dE0e0dFE5215E207a2aF0"  # TUSDT
+      SOL_USDT:
+        base: "0x7405ac42FfAf5E54Ea0B643Fc31233aF8B9DfA3F"   # TSOL
+        quote: "0x7233112f0FE25ae88b3dE0e0dFE5215E207a2aF0"  # TUSDT
+    metamask-private-key: ""   # ENV: ANUBIS_PRIVATE_KEY_METAMASK（结算签名 operator EOA）
+    view-key-private: ""   # ENV: ANUBIS_VIEW_KEY（隐私下单 ECIES 解密）
+    settlement-batch-size: 100
+    settlement-interval-ms: 500
+    settlement-workers: 3
+    settlement-gate: false        # Settlement v2 requireProof 门槛：false=承诺哈希模式 / true=0x0100 PLONK
+    poll-interval-ms: 200
+    # EVM 交易参数（evm.go）
+    gas-tip-cap-gwei: 2
+    gas-fee-cap-gwei: 50
+    receipt-timeout-s: 120
+  # ── Aleo 链后端（Leo/snarkVM，snarkOS REST；骨架阶段）──
+  aleo:
+    rpc-endpoint: "https://api.explorer.provable.com/v1"   # Aleo testnet（Provable explorer API）
+    program-id: "anubook_dex_p7.aleo"   # 默认（ALEO/USDCX p7：两阶段公开/隐私混合下单，4 下单+4 settle+4 撤单）
+    program-id-by-symbol:
+      ETH_USDT: "anubook_dex_p2.aleo"   # ETH/USDT 铸币模式用 p2（下单提取按交易对路由）
+    private-key: ""   # ENV: ANUBIS_PRIVATE_KEY（可选，metamask key 优先）
+    view-key-private: ""   # ENV: ANUBIS_VIEW_KEY（隐私下单 ECIES 解密）
+    # operator 合规凭证（test_usdcx_stablecoin Credentials record 明文）：
+    # settle 的 transfer_private_with_creds 需 spend operator 名下凭证（用户凭证归用户，
+    # operator spend 不了）；合规校验只检查 freeze_list_root 不校验 owner。
+    # 由 operator 执行 get_credentials 领取一次后，view key 解出明文填入（凭证 settle 后
+    # 重新铸回 operator，可复用）。
+    operator-credentials: "{ owner: aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal.private, freeze_list_root: 3642222252059314292809609689035560016959342421640560347114299934615987159853field.private, _nonce: 6253436203966890955927905488874000453349351738089621787267600126418581777605group.public, _version: 1u8.public }"
+    address: "aleo16dwwdmqqwft7hugdelwx6d8g39xlqwsath8u3kxrhztw4re4xv9qhe7sal"  # Aleo 钱包地址（用于接收结算资产）
+    settlement-batch-size: 100
+    poll-interval-ms: 1000
+    network: "testnet"   # leo execute --network
+
+rocksdb:
+  data-dir: "./data/"
+
+http:
+  port: 9000

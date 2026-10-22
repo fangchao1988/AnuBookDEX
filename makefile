@@ -29,15 +29,16 @@ all:
 
 # macOS 本地构建（集中式模式）
 mac:
-	go build ${LDFLAGS} -o ${OUTPUT} ./cmd/exchange/
+	CGO_ENABLED=0 go build ${LDFLAGS} -o ${OUTPUT} ./cmd/exchange/
 
 # macOS 本地构建（DEX - Anubis 链模式）
+# CGO_ENABLED=0：go-ethereum 的 cgo 需较新 macOS SDK，本地 CLT 链接会失败（Security framework 符号缺失）
 anubis:
-	go build ${LDFLAGS} -o ${ANUBIS_OUTPUT} ./cmd/engine/anubis/
+	CGO_ENABLED=0 go build ${LDFLAGS} -o ${ANUBIS_OUTPUT} ./cmd/engine/anubis/
 
 # macOS 本地构建（DEX - Aleo 链模式，骨架）
 aleo:
-	go build ${LDFLAGS} -o ${ALEO_OUTPUT} ./cmd/engine/aleo/
+	CGO_ENABLED=0 go build ${LDFLAGS} -o ${ALEO_OUTPUT} ./cmd/engine/aleo/
 
 # 向后兼容别名：make dex == make anubis
 dex: anubis

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSettings, type OrderType, type PrivacyMode } from '../../stores/settings'
 import { useTrade } from '../../stores/trade'
 import { useUi } from '../../stores/ui'
@@ -7,6 +7,8 @@ import { formatNumber } from '../../lib/format'
 import { toChannelSymbol } from '../../lib/symbol'
 import { pairMode, pairTokens } from '../../lib/tokens'
 import { nextOrderId, submitAleoOrder, submitPrivacyOrder, submitPublicOrder, submitTxOrder } from '../../lib/api/orders'
+import { fetchChainTokens, submitAnubisOrder } from '../../lib/api/anubis'
+import { useChain } from '../../stores/chain'
 import { privateBalance } from '../../lib/wallet/types'
 
 // 人类单位 -> 6 位最小单位（BigInt，与隐私路径链上 record 单位一致）
@@ -101,6 +103,14 @@ export function OrderForm() {
   const navigate = useNavigate()
   const wallet = useWallet((s) => s.wallet)
   const walletAddress = useWallet((s) => s.address)
+  // 双链：Anubis 分支用 EVM 钱包地址 + 签名器（Aleo 分支见上方 wallet）
+  const chain = useChain((s) => s.chain)
+  const evmAddress = useChain((s) => s.address)
+  const evmWallet = useChain((s) => s.evmWallet)
+  const evmBalance = useChain((s) => s.evmBalance)
+  // Anubis：交易对显示名（ETH/USDT）与链上代币合约名（TETH/TUSDT）不同，
+  // 拉取代币清单把两者对应起来，避免下单时对不上号
+  const [onchainTokens, setOnchainTokens] = useState('')
   const [submitState, setSubmitState] = useState<SubmitState>('idle')
   const [submitError, setSubmitError] = useState('')
   const timerRef = useRef<number | null>(null)
@@ -132,10 +142,40 @@ export function OrderForm() {
       return
     }
     const orderId = nextOrderId()
-    const trader = walletAddress ?? localStorage.getItem('aleo_address') ?? 'aleo1dev-placeholder'
     setSubmitState('submitting')
     setSubmitError('')
 
+    // ── Anubis（EVM）分支：链下订单池 + 可选 ECIES 隐私载荷 ──────────
+    // 与 Aleo 差异：Anubis 订单不锁 record custody —— 引擎链下撮合，
+    // Settlement v2 submitBatch 上链结算；隐私模式由前端 ECIES 加密订单明文。
+    if (chain === 'anubis') {
+      const trader = evmAddress ?? ''
+      if (!trader) {
+        setSubmitState('error')
+        setSubmitError('请先连接 MetaMask 钱包')
+        return
+      }
+      // 注：darkpool 已在 submit() 开头统一跳转，此处不再重复判断
+      const res = await submitAnubisOrder({
+        order_id: orderId,
+        symbol: channelSymbol,
+        side: direction === 'long' ? 0 : 1,
+        price: priceVal,
+        amount: amountVal,
+        deadline: Math.floor(Date.now() / 1000) + 3600,
+        trader,
+        privacy: privacyMode === 'privacy',
+        // 签名可选：引擎不强制校验，失败不阻断下单
+        sign: (msg) => evmWallet.signOrder(msg),
+      })
+      setSubmitState(res.ok ? 'ok' : 'error')
+      if (!res.ok) setSubmitError(res.error ?? '提交失败')
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+      timerRef.current = window.setTimeout(() => setSubmitState('idle'), 2000)
+      return
+    }
+
+    const trader = walletAddress ?? localStorage.getItem('aleo_address') ?? 'aleo1dev-placeholder'
     let placedTxId = ''
     let ciphertext: string | undefined
     try {
@@ -208,6 +248,26 @@ export function OrderForm() {
 
   const base = pair.split('/')[0]
   const quote = pair.split('/')[1]
+
+  // 当前交易对在链上对应的 ERC-20 代币（仅 Anubis 需要）
+  const channelForTokens = toChannelSymbol(pair)
+  useEffect(() => {
+    if (chain !== 'anubis') {
+      setOnchainTokens('')
+      return
+    }
+    let alive = true
+    fetchChainTokens()
+      .then((data) => {
+        if (!alive) return
+        const hit = data.pairs.find((p) => p.symbol === channelForTokens)
+        setOnchainTokens(hit ? `${hit.base.symbol} / ${hit.quote.symbol}` : '')
+      })
+      .catch(() => alive && setOnchainTokens(''))
+    return () => {
+      alive = false
+    }
+  }, [chain, channelForTokens])
   const isPerp = tradingMode === 'perp'
   //const balance = isPerp ? '15,133.45 USDT' : '128,456.78 USDT'
   const balances = useWallet((s) => s.balances)
@@ -216,11 +276,16 @@ export function OrderForm() {
   // - 标准 tab：显示公开余额（transfer_public 托管，无需 record/凭证）
   // - 隐私/暗池 tab：显示隐私余额（record 托管，总 - 公开）
   // p2 铸币币对无公开/隐私之分（Token record 唯一形态），各 tab 一致
-  const quoteBalance = !isP4
-    ? balances?.usdt ?? '--'
-    : privacyMode === 'standard'
-      ? balances?.usdcxPublic ?? '--'
-      : privateBalance(balances?.usdcx, balances?.usdcxPublic)
+  // Anubis（EVM）无 record 托管：gas/结算币是 DAI，余额直接取自 RPC
+  const isAnubis = chain === 'anubis'
+  const quoteBalance = isAnubis
+    ? evmBalance
+    : !isP4
+      ? balances?.usdt ?? '--'
+      : privacyMode === 'standard'
+        ? balances?.usdcxPublic ?? '--'
+        : privateBalance(balances?.usdcx, balances?.usdcxPublic)
+  const quoteUnit = isAnubis ? 'DAI' : quote
   // 强平价估算：liq = entry * (1 - 1/lev)（对齐原型 updateLiquidationEstimate，decimal 精确计算）
   const liqPrice = useMemo(() => {
     const entry = toDecimal(68245)
@@ -236,10 +301,27 @@ export function OrderForm() {
     <div className="bg-bg-secondary border-r border-line p-3 border-b border-line">
       <div className="flex justify-between mb-2.5 text-xs">
         <span className="text-text-muted">
-          {isPerp ? '账户权益' : isP4 ? (privacyMode === 'standard' ? '钱包余额 · 公开' : '钱包余额 · 隐私') : '钱包余额'}
+          {isAnubis
+            ? '钱包余额'
+            : isPerp
+              ? '账户权益'
+              : isP4
+                ? privacyMode === 'standard'
+                  ? '钱包余额 · 公开'
+                  : '钱包余额 · 隐私'
+                : '钱包余额'}
         </span>
-        <span className="text-text-primary font-semibold">{quoteBalance} {quote}</span>
+        <span className="text-text-primary font-semibold">{quoteBalance} {quoteUnit}</span>
       </div>
+      {/* Anubis：链上代币与交易对显示名不同，显式提示避免混淆 */}
+      {isAnubis && onchainTokens && (
+        <div className="mb-2 -mt-1 text-[9px] text-text-muted">
+          链上代币：<span className="font-mono text-cyan">{onchainTokens}</span>
+          {onchainTokens !== `${base} / ${quote}` && (
+            <span className="text-text-muted">（{pair} 由这对代币组成）</span>
+          )}
+        </div>
+      )}
 
       {/* 隐私模式选择器 */}
       <div className="mb-2.5 p-2 bg-bg-tertiary border border-line rounded-md">

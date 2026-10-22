@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSettings } from '../../stores/settings'
 import { useWallet } from '../../stores/wallet'
+import { useChain } from '../../stores/chain'
 import { Tag } from '../../components/ui/Tag'
 import { cancelOrder, fetchOrders, fetchTrades, SETTLE_LABEL, STATUS_LABEL, type OrderRecord, type TradeRecord } from '../../lib/api/orders'
+import { fetchAnubisOrders, fetchAnubisTrades, tradePerspective } from '../../lib/api/anubis'
 import { Modal } from '../../components/ui/Modal'
 import { toChannelSymbol } from '../../lib/symbol'
 import { dateTimeStr } from '../../lib/format'
@@ -10,11 +12,85 @@ import { scalePairValue } from '../../lib/tokens'
 
 type BottomTab = 'open' | 'history' | 'trades' | 'funding' | 'ai'
 
+// Anubis 引擎字段 -> 前端既有形态（渲染层无需分叉）
+// state: submitted|matched|canceled  ->  status: waiting|filled|canceled
+const ANUBIS_STATE: Record<string, OrderRecord['status']> = {
+  submitted: 'waiting',
+  matched: 'filled',
+  canceled: 'canceled',
+}
+const ANUBIS_SETTLE: Record<string, TradeRecord['settle_status']> = {
+  queued: 'pending',
+  sent: 'settled',
+  confirmed: 'settled',
+}
+
+function normalizeAnubisOrder(o: {
+  order_id: number
+  symbol: string
+  side: number
+  price: string
+  amount: string
+  trader: string
+  mode: string
+  state: string
+  create_at: number
+}): OrderRecord {
+  const status = ANUBIS_STATE[o.state] ?? 'waiting'
+  return {
+    order_id: o.order_id,
+    symbol: o.symbol,
+    trader: o.trader,
+    side: o.side === 0 ? 'buy' : 'sell',
+    type: o.mode === 'private' ? '限价 · 隐私' : '限价',
+    price: o.price,
+    amount: o.amount,
+    // 撮合即全额成交（引擎按整单撮合），部分成交暂无上报
+    filled: status === 'filled' ? o.amount : '0',
+    status,
+    create_at: o.create_at,
+  }
+}
+
+function normalizeAnubisTrade(
+  t: {
+    order_id: number
+    symbol: string
+    side: number
+    price: string
+    amount: string
+    buyer: string
+    seller: string
+    ts: number
+    settle_status: string
+  },
+  myAddress: string,
+): TradeRecord {
+  // 一笔成交有两个参与者：按「我的地址」判断方向与对手方，
+  // 否则同一条成交的双方会渲染成两条看起来一样的记录
+  const { side, counterparty } = tradePerspective(t, myAddress)
+  return {
+    order_id: t.order_id,
+    symbol: t.symbol,
+    side,
+    price: t.price,
+    amount: t.amount,
+    trader: myAddress,
+    taker: counterparty,
+    ts: t.ts,
+    settle_status: ANUBIS_SETTLE[t.settle_status] ?? 'pending',
+  }
+}
+
 // 底部面板：对齐原型 #bottombar（当前委托/历史委托/成交记录/资金费率/AI 日志）
 export function OrdersPanel({ symbol }: { symbol: string }) {
   const tradingMode = useSettings((s) => s.tradingMode)
   const isPerp = tradingMode === 'perp'
   const walletAddress = useWallet((s) => s.address)
+  // 双链：Anubis 引擎的委托/成交是另一套字段（state 而非 status、side 是数字），
+  // 这里规范化为既有 OrderRecord/TradeRecord 形态，渲染逻辑无需分叉
+  const chain = useChain((s) => s.chain)
+  const chainAddress = useChain((s) => s.address)
   const [tab, setTab] = useState<BottomTab>('open')
   const [orders, setOrders] = useState<OrderRecord[]>([])
   const [trades, setTrades] = useState<TradeRecord[]>([])
@@ -23,18 +99,28 @@ export function OrdersPanel({ symbol }: { symbol: string }) {
   // P3 委托/成交真实数据：加载 + 5s 轮询（trader 未连接时查全部）
   const loadOrders = useCallback(async () => {
     try {
-      const trader = walletAddress ?? localStorage.getItem('aleo_address') ?? undefined
-      const [list, tradeList] = await Promise.all([
-        fetchOrders({ trader, symbol: toChannelSymbol(symbol), limit: 50 }),
-        fetchTrades({ trader, symbol: toChannelSymbol(symbol), limit: 50 }),
-      ])
-      setOrders(list)
-      setTrades(tradeList)
+      const sym = toChannelSymbol(symbol)
+      if (chain === 'anubis') {
+        const [list, tradeList] = await Promise.all([
+          fetchAnubisOrders({ trader: chainAddress ?? undefined, symbol: sym, limit: 50 }),
+          fetchAnubisTrades({ symbol: sym, limit: 50 }),
+        ])
+        setOrders(list.map(normalizeAnubisOrder))
+        setTrades(tradeList.map((t) => normalizeAnubisTrade(t, chainAddress ?? '')))
+      } else {
+        const trader = walletAddress ?? localStorage.getItem('aleo_address') ?? undefined
+        const [list, tradeList] = await Promise.all([
+          fetchOrders({ trader, symbol: sym, limit: 50 }),
+          fetchTrades({ trader, symbol: sym, limit: 50 }),
+        ])
+        setOrders(list)
+        setTrades(tradeList)
+      }
       setOrdersError('')
     } catch {
       setOrdersError('委托/成交加载失败')
     }
-  }, [walletAddress, symbol])
+  }, [walletAddress, chainAddress, chain, symbol])
 
   useEffect(() => {
     void loadOrders()

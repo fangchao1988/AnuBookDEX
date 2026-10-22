@@ -25,6 +25,7 @@ conf/preconf
 
 # 部署密钥（docker compose env_file）
 .env.aleo
+.env.anubis
 
 # Leo 项目 .env（testnet 私钥等，勿提交）
 contracts/leo/.env

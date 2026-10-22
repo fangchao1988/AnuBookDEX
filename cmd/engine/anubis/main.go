@@ -6,6 +6,7 @@ import (
 
 	"github.com/AnuBookDEX/engine/internal/dex/chain"
 	"github.com/AnuBookDEX/engine/internal/dex/chain/anubis"
+	"github.com/AnuBookDEX/engine/internal/dex/privacy"
 	"github.com/AnuBookDEX/engine/internal/dex/rocksdb"
 	"github.com/AnuBookDEX/engine/internal/dex/runner"
 	"github.com/AnuBookDEX/engine/internal/dex/ws"
@@ -66,6 +67,31 @@ func main() {
 		defer adapt.Orders().Shutdown()
 		src = adapt.Orders()
 		sink = adapt.Settlement()
+
+		// 注册 HTTP 路由（镜像 Aleo 引擎：/order + /api/v1/*）
+		var pool *anubis.OrderPool
+		if pp, ok := adapt.(interface{ Pool() *anubis.OrderPool }); ok {
+			pool = pp.Pool()
+			var vk *privacy.ViewKey
+			if s, ok := adapt.Orders().(*anubis.Subscriber); ok {
+				vk = s.GetViewKey()
+			}
+			// 结算器：下单时预检金库余额用
+			settl, _ := adapt.Settlement().(*anubis.Settlement)
+			http.HandleFunc("/order", anubis.HandleOrder(pool, vk, settl))
+			http.HandleFunc("/order/cancel", anubis.HandleCancel(pool))
+			http.HandleFunc("/api/v1/orders", anubis.HandleListOrders(pool))
+			http.HandleFunc("/api/v1/trades", anubis.HandleListTrades(pool))
+			// 隐私下单：前端取引擎 ECIES 公钥加密订单（未配置 view key 时返回 enabled=false）
+			http.HandleFunc("/api/v1/privacy/pubkey", anubis.HandleEciesPubkey(vk))
+			// 币对代币清单（前端入金/余额展示）
+			var evmClient *anubis.EVMClient
+			if ec, ok := adapt.(interface{ EVM() *anubis.EVMClient }); ok {
+				evmClient = ec.EVM()
+			}
+			http.HandleFunc("/api/v1/tokens", anubis.HandlePairTokens(evmClient))
+			common.Info("anubis engine: /order + /order/cancel + /api/v1/{orders,trades,privacy/pubkey} enabled")
+		}
 	}
 
 	runner.StartEngine(

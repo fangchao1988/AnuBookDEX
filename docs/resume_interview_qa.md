@@ -478,7 +478,7 @@ matcher → pendingSettlements 缓冲 ─┬─→ prover-1 ─┐
 
 **参考答案**：
 
-> 合约位于**独立的兄弟仓库** `AnuBookDEX-contracts/contracts/`（不是子模块），Go 引擎通过 abi/bindings 与其交互。7 个合约的职责划分：
+> 合约位于**本仓库 `contracts/anubis/`**（Solidity hardhat 工程，2026-09 从独立兄弟仓库 `AnuBookDEX-contracts` 移入；与 `contracts/leo/` Aleo 程序分区）。Go 引擎通过 `contracts/abi` + `contracts/bindings` 与其交互。7 个合约的职责划分：
 
 | 合约 | 职责 | 可升级性 |
 |------|------|---------|
@@ -546,7 +546,7 @@ matcher → pendingSettlements 缓冲 ─┬─→ prover-1 ─┐
 
 **参考答案**：
 
-代码位置：`AnuBookDEX-contracts/contracts/LPMiningRewards.sol`。
+代码位置：`contracts/anubis/contracts/LPMiningRewards.sol`。
 
 **rewardDebt 算法原理**（Synthetix/MasterChef 经典算法）：
 - 全局维护 `accRewardPerShare`（每单位 LP 累积的奖励数，精度 1e18）
