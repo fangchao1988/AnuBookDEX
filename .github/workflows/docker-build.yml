@@ -119,12 +119,36 @@ jobs:
           script: |
             set -e
             cd /home/coffee_time/AnuBookDEX
-            git pull --rebase || echo "⚠️ git pull 失败，使用当前代码"
-            # 直接拉取 CI 推送的 GHCR 镜像（服务器不本地构建，秒级更新）
-            # 仓库为 private 时需先在服务器 docker login ghcr.io
-            # 首次部署 Anubis 引擎前需在服务器准备 .env.anubis（含 ANUBIS_PRIVATE_KEY_METAMASK）
-            test -f .env.anubis || { echo "❌ 缺少 .env.anubis，Anubis 引擎无法启动"; exit 1; }
+
+            # git pull 必须成功：曾用 `|| echo 警告` 静默忽略失败，
+            # 导致服务器 compose 停留在旧版本（缺 engine-anubis 服务），
+            # 而 CI 仍显示成功，线上 502 却查不到原因。
+            git pull --rebase
+
+            grep -q "engine-anubis:" docker-compose.yml || {
+              echo "❌ docker-compose.yml 缺少 engine-anubis 服务（文件是旧版本）"; exit 1; }
+            test -f .env.anubis || {
+              echo "❌ 缺少 .env.anubis，请先: cp .env.anubis.example .env.anubis 并填密钥"; exit 1; }
+
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
+
+            # 真实验证：up -d 在容器崩溃时也返回 0，必须探测健康
+            echo "→ 等待服务启动..."
+            sleep 20
             docker compose ps
+            fail=0
+            for c in "Aleo 引擎:http://localhost:9000/health" \
+                     "Anubis 引擎:http://localhost:9001/health" \
+                     "前端代理:http://localhost:5005/anubis/api/v1/tokens"; do
+              name="${c%%:*}"; url="${c#*:}"
+              if curl -fsS --max-time 10 "$url" >/dev/null 2>&1; then echo "  ✅ $name";
+              else echo "  ❌ $name ($url)"; fail=1; fi
+            done
+            if [ "$fail" = "1" ]; then
+              echo "❌ 部署校验失败，最近日志："
+              docker compose logs --tail=40 engine-anubis 2>/dev/null || true
+              docker compose logs --tail=20 web 2>/dev/null || true
+              exit 1
+            fi

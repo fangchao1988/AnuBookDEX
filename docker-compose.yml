@@ -81,8 +81,11 @@ services:
     depends_on:
       engine:
         condition: service_healthy
+      # 只要求容器启动，不要求 healthy：
+      # healthy 门槛会让 web 在 Anubis 引擎启动慢/异常时整体不可用，
+      # 而 nginx 已用运行时 DNS 解析，Anubis 恢复后无需重启 web
       engine-anubis:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
 
 volumes:

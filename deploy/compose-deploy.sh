@@ -41,9 +41,22 @@ fi
 echo "✅ conf/test-aleo.yaml 存在"
 
 # ─── 3. 更新代码（git 仓库时） ─────────────────────
+# 注意：这里必须失败即停。曾用 `git pull || echo 警告` 静默忽略失败，
+# 导致服务器的 compose 文件停留在旧版本（缺少新服务），
+# 而 CI 仍显示成功 —— 排障花很久。
 if [ -d .git ]; then
   echo "→ git pull ..."
-  git pull --rebase || echo "⚠️  git pull 失败，使用当前代码继续"
+  if ! git pull --rebase; then
+    echo "❌ git pull 失败。服务器可能有本地改动，请先处理："
+    echo "   git status && git stash   # 或 git checkout -- <file>"
+    exit 1
+  fi
+fi
+
+# 校验 compose 确实包含新服务（防旧文件）
+if ! grep -q "engine-anubis:" docker-compose.yml; then
+  echo "❌ docker-compose.yml 缺少 engine-anubis 服务（文件是旧版本）"
+  exit 1
 fi
 
 # ─── 4. 构建并启动 ─────────────────────────────────
@@ -54,8 +67,36 @@ echo "→ 启动服务..."
 docker compose up -d
 
 # ─── 5. 状态与验证 ─────────────────────────────────
+echo "→ 等待服务启动..."
+sleep 20
+
 echo "→ 服务状态："
 docker compose ps
+
+# 必须真正验证可用性：`docker compose up -d` 在容器崩溃时也返回 0，
+# 只看 job 状态会把「起不来」误判为部署成功。
+echo "→ 健康检查..."
+fail=0
+check() {
+  local name="$1" url="$2"
+  if curl -fsS --max-time 10 "$url" >/dev/null 2>&1; then
+    echo "  ✅ ${name}"
+  else
+    echo "  ❌ ${name} 不可用（$url）"
+    fail=1
+  fi
+}
+check "Aleo 引擎   :9000/health"        "http://localhost:9000/health"
+check "Anubis 引擎 :9001/health"        "http://localhost:9001/health"
+check "前端代理 /anubis/api/v1/tokens"  "http://localhost:5005/anubis/api/v1/tokens"
+
+if [ "$fail" = "1" ]; then
+  echo ""
+  echo "❌ 部署校验失败，最近日志："
+  docker compose logs --tail=40 engine-anubis 2>/dev/null || true
+  docker compose logs --tail=20 web 2>/dev/null || true
+  exit 1
+fi
 
 echo ""
 echo "=============================================="
