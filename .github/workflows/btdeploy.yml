@@ -1,0 +1,26 @@
+name: btdeploy
+on:
+  push:
+    branches: [ 'ci-btd-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: btdeploy
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== deployment_list hits ==="
+          $SSH 'grep -oE "140\.235\.99\.27|libai|140\.235|ssh_port|password|private_key|privateKey" /www/server/panel/data/deployment_list.json 2>/dev/null | sort | uniq -c | head -30'
+          echo "=== deployment_list sample ==="
+          $SSH 'head -c 4000 /www/server/panel/data/deployment_list.json 2>/dev/null'
+          echo "=== dedicated_servicer ==="
+          $SSH 'cat /www/server/panel/data/dedicated_servicer.json 2>/dev/null'
+          echo "=== dir_history ==="
+          $SSH 'cat /www/server/panel/data/dir_history.json 2>/dev/null'
+          echo "=== any libai/140.235 in panel data ==="
+          $SSH 'grep -rIl "140.235.99.27\|libai" /www/server/panel/data/ 2>/dev/null | head -10'
