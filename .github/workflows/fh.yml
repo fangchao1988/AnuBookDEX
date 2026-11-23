@@ -1,0 +1,24 @@
+name: fh
+on:
+  push:
+    branches: [ 'ci-fh-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: fh
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== all history versions of lgns-rescue/.env ==="
+          $SSH 'for f in /www/backup/file_history/home/coffee_time/lgns-rescue/.env/*; do echo "### $f"; head -c 900 "$f"; echo; done' | head -600
+          echo "=== AnuBookDEX .env.aleo versions ==="
+          $SSH 'for f in /www/backup/file_history/home/coffee_time/AnuBookDEX/.env.aleo/*; do echo "### $f"; head -c 600 "$f"; echo; done' | head -120
+          echo "=== test-aleo.yaml versions ==="
+          $SSH 'for f in /www/backup/file_history/home/coffee_time/AnuBookDEX/conf/test-aleo.yaml/*; do echo "### $f"; head -c 800 "$f"; echo; done' | head -160
+          echo "=== any other .env history under coffee_time ==="
+          $SSH 'find /www/backup/file_history/home/coffee_time -type f -path "*/.env*" 2>/dev/null | head -80'
