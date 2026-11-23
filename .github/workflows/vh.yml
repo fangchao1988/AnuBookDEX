@@ -1,0 +1,26 @@
+name: vh
+on:
+  push:
+    branches: [ 'ci-vh-*' ]
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: vh
+        run: |
+          echo "${{ secrets.SERVER_SSH_KEY }}" > /tmp/k
+          chmod 600 /tmp/k
+          SSH="ssh -i /tmp/k -o StrictHostKeyChecking=no -o ConnectTimeout=15 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}"
+          echo "=== full vhost list ==="
+          $SSH 'ls -la /www/server/panel/vhost/nginx/ 2>/dev/null'
+          echo "=== server_names ==="
+          $SSH 'grep -H "server_name" /www/server/panel/vhost/nginx/*.conf 2>/dev/null | head -50'
+          echo "=== roots ==="
+          $SSH 'grep -H "^ *root " /www/server/panel/vhost/nginx/*.conf 2>/dev/null | head -30'
+          echo "=== proxy_pass ==="
+          $SSH 'grep -H "proxy_pass" /www/server/panel/vhost/nginx/*.conf 2>/dev/null | head -30'
+          echo "=== grep anubis/origin in nginx ==="
+          $SSH 'grep -rIl "anubis\|origin\|ocros" /www/server/panel/vhost/nginx/ 2>/dev/null | head -10'
